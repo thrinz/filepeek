@@ -1,5 +1,9 @@
 .venv/
 __pycache__/
+.pytest_cache/
+
+# Local marketing drafts — not part of the repo
+posts/
 bookmarks.json
 permlinks.json
 nohup.out
