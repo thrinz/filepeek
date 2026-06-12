@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="robots" content="noindex">
 <title>filepeek — __FILEPEEK_ROOT__</title>
 <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
 <script src="/static/vendor/tailwind.js"></script>
@@ -358,6 +359,21 @@ async function renderMermaid(code) {
   }
 }
 
+// Replace ```mermaid fences in rendered markdown (marked emits
+// <pre><code class="language-mermaid">) with inline diagrams.
+async function renderMermaidFences(rootEl) {
+  if (!window.mermaid) return;
+  for (const code of rootEl.querySelectorAll("pre > code.language-mermaid")) {
+    const pre = code.parentElement;
+    try {
+      const { svg } = await mermaid.render("mmd-" + (++_mermaidSeq), code.textContent || "");
+      const div = document.createElement("div");
+      div.innerHTML = svg;
+      pre.replaceWith(div);
+    } catch (e) { /* invalid diagram source — keep showing the fence */ }
+  }
+}
+
 function toast(msg) {
   const t = $("toast");
   t.textContent = msg;
@@ -708,6 +724,7 @@ function showPanel(which) {
 
   if (which === "md") {
     $("preview").innerHTML = `<div class="markdown-body">${marked.parse($("editor").value || "")}</div>`;
+    renderMermaidFences($("preview"));
   } else if (which === "html") {
     $("preview-iframe").srcdoc = $("editor").value || "";
   } else if (which === "csv") {
