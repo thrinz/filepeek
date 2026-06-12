@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>filepeek — see what your AI actually built</title>
+<meta name="description" content="A single-file web viewer for AI-generated files. Renders Markdown, Mermaid, Office docs, code, and CSV from any directory — locally or on a server.">
+<meta property="og:title" content="filepeek">
+<meta property="og:description" content="See what your AI actually built. Markdown, Mermaid, xlsx/docx/pptx, code — rendered in your browser.">
+<meta property="og:image" content="https://filepeek.dev/img/markdown.png">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #0b0f1a;
+    --bg-soft: #111827;
+    --card: #161e2e;
+    --text: #e5e9f0;
+    --muted: #94a3b8;
+    --accent: #6366f1;
+    --accent-soft: #818cf8;
+    --border: #243044;
+    --code-bg: #0f1524;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  a { color: var(--accent-soft); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  /* hero */
+  header { padding: 72px 0 40px; text-align: center; }
+  header img.logo { width: 64px; height: 64px; }
+  h1 { font-size: 44px; margin: 16px 0 8px; letter-spacing: -1px; }
+  .tagline { font-size: 22px; color: var(--muted); max-width: 640px; margin: 0 auto 28px; }
+  .tagline b { color: var(--text); }
+  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 28px; }
+  .btn {
+    display: inline-block; padding: 12px 22px; border-radius: 10px; font-weight: 600;
+    border: 1px solid var(--border);
+  }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: var(--accent-soft); text-decoration: none; }
+  .btn-ghost:hover { border-color: var(--accent-soft); text-decoration: none; }
+  .install {
+    display: inline-flex; align-items: center; gap: 12px;
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 18px; font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+    font-size: 14px; color: #a5b4fc; cursor: pointer;
+  }
+  .install span.dollar { color: #475569; user-select: none; }
+  .hero-shot { margin: 48px auto 0; max-width: 980px; }
+
+  /* screenshots */
+  .shot {
+    border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+    box-shadow: 0 24px 60px -24px rgba(0,0,0,.7);
+    background: var(--card);
+  }
+  .shot img { display: block; width: 100%; height: auto; }
+
+  /* tour sections */
+  section.tour { padding: 56px 0; border-top: 1px solid var(--border); }
+  .row { display: grid; grid-template-columns: 5fr 7fr; gap: 48px; align-items: center; }
+  .row.flip .copy { order: 2; }
+  @media (max-width: 800px) { .row, .row.flip .copy { display: block; order: 0; } .row .copy { margin-bottom: 24px; } }
+  .kicker { color: var(--accent-soft); font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px; }
+  section.tour h2 { font-size: 28px; margin: 8px 0 12px; letter-spacing: -.5px; }
+  section.tour p { color: var(--muted); }
+  section.tour p code, .features code {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px;
+    padding: 1px 6px; font-size: 13px; color: #c7d2fe;
+  }
+
+  /* feature grid */
+  .features { padding: 64px 0; border-top: 1px solid var(--border); }
+  .features h2 { text-align: center; font-size: 28px; margin-bottom: 36px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  .cell {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px;
+  }
+  .cell h3 { font-size: 16px; margin-bottom: 6px; }
+  .cell p { color: var(--muted); font-size: 14px; }
+
+  /* deploy strip */
+  .deploy { padding: 64px 0; border-top: 1px solid var(--border); text-align: center; }
+  .deploy h2 { font-size: 28px; margin-bottom: 12px; }
+  .deploy p { color: var(--muted); max-width: 620px; margin: 0 auto 24px; }
+
+  footer {
+    border-top: 1px solid var(--border); padding: 36px 0; text-align: center;
+    color: var(--muted); font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <img class="logo" src="logo.svg" alt="filepeek logo">
+  <h1>filepeek</h1>
+  <p class="tagline">Your coding agent just wrote a pile of <b>.md</b>, <b>.html</b>, and <b>.xlsx</b> files.
+  Stop squinting at raw markdown in a terminal — <b>see them rendered.</b></p>
+  <div class="cta">
+    <a class="btn btn-primary" href="https://github.com/thrinz/filepeek">View on GitHub</a>
+    <a class="btn btn-ghost" href="https://github.com/thrinz/filepeek/blob/main/docs/INSTALL.md">Install guide</a>
+  </div>
+  <div class="install" onclick="navigator.clipboard.writeText('git clone https://github.com/thrinz/filepeek && cd filepeek && ./install.sh')" title="Click to copy">
+    <span class="dollar">$</span> git clone https://github.com/thrinz/filepeek &amp;&amp; cd filepeek &amp;&amp; ./install.sh
+  </div>
+  <div class="hero-shot shot">
+    <video controls preload="metadata" poster="img/markdown.png" style="display:block;width:100%;height:auto;" aria-label="90-second narrated tour of filepeek">
+      <source src="tour.mp4" type="video/mp4">
+    </video>
+  </div>
+  <p style="color:var(--muted);font-size:13px;margin-top:10px;">▶ 78-second narrated tour</p>
+</header>
+
+<section class="tour wrap">
+  <div class="row">
+    <div class="copy">
+      <div class="kicker">Markdown + Mermaid</div>
+      <h2>Diagrams render, not just text</h2>
+      <p>Markdown gets full rendering — headings, tables, syntax-highlighted code blocks —
+      and <code>mermaid</code> fences become real diagrams. The architecture doc your agent
+      wrote finally looks like an architecture doc.</p>
+    </div>
+    <div class="shot"><img src="img/markdown.png" alt="Rendered Markdown with Mermaid flowchart"></div>
+  </div>
+</section>
+
+<section class="tour wrap">
+  <div class="row flip">
+    <div class="copy">
+      <div class="kicker">Office files</div>
+      <h2>xlsx, docx, pptx — no Office needed</h2>
+      <p>Spreadsheets render as styled tables with all their sheets, documents and decks
+      render as pages. Straight in the browser, on a machine that has never seen
+      Microsoft Office.</p>
+    </div>
+    <div class="shot"><img src="img/spreadsheet.png" alt="An xlsx spreadsheet rendered in the browser"></div>
+  </div>
+</section>
+
+<section class="tour wrap">
+  <div class="row">
+    <div class="copy">
+      <div class="kicker">HTML, served</div>
+      <h2>Generated reports open as pages</h2>
+      <p>When your agent writes an HTML dashboard or report, filepeek serves it
+      directly — styles, layout and all. No "view source" squinting, no copying
+      files out to open them.</p>
+    </div>
+    <div class="shot"><img src="img/html.png" alt="An HTML dashboard rendered directly inside filepeek"></div>
+  </div>
+</section>
+
+<section class="tour wrap">
+  <div class="row flip">
+    <div class="copy">
+      <div class="kicker">Code &amp; data</div>
+      <h2>~60 file types, highlighted</h2>
+      <p>Source files get syntax highlighting; CSV and TSV become sortable tables;
+      images, SVG, and PDF display inline. HTML files are served directly, so the
+      report your agent generated opens as a page, not as markup soup.</p>
+    </div>
+    <div class="shot"><img src="img/code.png" alt="Python source with syntax highlighting"></div>
+  </div>
+</section>
+
+<section class="tour wrap">
+  <div class="row">
+    <div class="copy">
+      <div class="kicker">Find anything</div>
+      <h2>Search names <em>and</em> contents</h2>
+      <p>Filename search and full-content search across the whole tree. Every view has a
+      permalink, so "look at this" is a URL — bookmarks keep your frequent files one
+      click away.</p>
+    </div>
+    <div class="shot"><img src="img/search.png" alt="Search results across filenames and file contents"></div>
+  </div>
+</section>
+
+<section class="features wrap">
+  <h2>And the rest of the toolbox</h2>
+  <div class="grid">
+    <div class="cell"><h3>✏️ Inline editing</h3><p>Fix a typo in the browser and save — no editor round-trip.</p></div>
+    <div class="cell"><h3>📦 Upload, download, zip</h3><p>Drop files in, pull files out, or grab a whole folder as a zip.</p></div>
+    <div class="cell"><h3>🔗 Permalinks &amp; bookmarks</h3><p>Share a rendered view as a stable URL; pin what you revisit.</p></div>
+    <div class="cell"><h3>🔒 Locked down by default</h3><p>Binds <code>127.0.0.1</code> locally; refuses to start exposed without auth. PBKDF2 passwords, signed sessions, per-IP lockout.</p></div>
+    <div class="cell"><h3>🪶 Absurdly small</h3><p>One Python file, one HTML file, no database. Read it over coffee.</p></div>
+    <div class="cell"><h3>🤖 Scriptable</h3><p>Bearer-token API access for agents and CI: <code>Authorization: Bearer …</code></p></div>
+  </div>
+</section>
+
+<section class="deploy wrap">
+  <h2>Runs where your files are</h2>
+  <p><b>WSL2 &amp; Linux:</b> one command, opens in your Windows browser.
+  <b>Any cloud server:</b> paste one cloud-init file or run one installer — you get HTTPS,
+  password auth, and a systemd service. Prefer zero public exposure? There's a
+  Tailscale mode.</p>
+  <a class="btn btn-primary" href="https://github.com/thrinz/filepeek/blob/main/docs/INSTALL.md">See all install options</a>
+</section>
+
+<footer>
+  <div class="wrap">
+    MIT licensed · <a href="https://github.com/thrinz/filepeek">github.com/thrinz/filepeek</a> ·
+    <a href="https://github.com/thrinz/filepeek/issues">Issues &amp; support</a>
+  </div>
+</footer>
+
+</body>
+</html>

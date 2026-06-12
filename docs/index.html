@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>filepeek — View AI-Generated Files in Your Browser | Markdown, Excel, HTML Viewer</title>
+<meta name="description" content="filepeek is a free, self-hosted viewer for AI-generated files. Render Markdown with Mermaid diagrams, view xlsx/docx/pptx without Office, preview HTML — straight from your Linux or WSL2 filesystem.">
+<link rel="canonical" href="https://thrinz.github.io/filepeek/">
+<link rel="icon" type="image/svg+xml" href="logo.svg">
+
+<!-- Open Graph / social previews -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="filepeek — View AI-Generated Files in Your Browser">
+<meta property="og:description" content="Self-hosted viewer for the files AI agents produce: Markdown with Mermaid, Excel/Word/PowerPoint, HTML, code, CSV, images, PDFs. One Python file, no database.">
+<meta property="og:url" content="https://thrinz.github.io/filepeek/">
+<meta property="og:image" content="https://thrinz.github.io/filepeek/logo.svg">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="filepeek — View AI-Generated Files in Your Browser">
+<meta name="twitter:description" content="Render Markdown, Mermaid, xlsx, docx, pptx, HTML and code from any folder — self-hosted, one Python file.">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "filepeek",
+  "operatingSystem": "Linux, macOS, Windows (WSL2)",
+  "applicationCategory": "DeveloperApplication",
+  "description": "A single-file, self-hosted web viewer for AI-generated files: Markdown with Mermaid diagrams, HTML, Excel, Word, PowerPoint, CSV, code, images, and PDFs.",
+  "url": "https://thrinz.github.io/filepeek/",
+  "downloadUrl": "https://github.com/thrinz/filepeek",
+  "softwareRequirements": "Python 3.10+",
+  "license": "https://opensource.org/licenses/MIT",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How do I view the Markdown files Claude Code or ChatGPT generates?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Point filepeek at the folder your AI agent writes to and open localhost:8765 — every Markdown file renders with formatting, tables, code blocks, and Mermaid diagrams instead of raw text." }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I open xlsx, docx, or pptx files without Microsoft Office?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. filepeek renders Excel workbooks, Word documents, and PowerPoint slides directly in the browser using pure Python — no Office, no LibreOffice, no cloud upload." }
+    },
+    {
+      "@type": "Question",
+      "name": "Does filepeek work on WSL2?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes — run it inside WSL2 and open localhost:8765 in your Windows browser. Localhost forwarding is automatic, no configuration needed." }
+    },
+    {
+      "@type": "Question",
+      "name": "Is my data sent anywhere?",
+      "acceptedAnswer": { "@type": "Answer", "text": "No. filepeek is fully self-hosted and reads files straight off your disk. Nothing is uploaded to any third-party service." }
+    },
+    {
+      "@type": "Question",
+      "name": "Is filepeek free?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes — filepeek is free and open source under the MIT license." }
+    }
+  ]
+}
+</script>
+
+<style>
+  :root { --accent: #2563eb; --fg: #1e293b; --dim: #475569; --bg: #f8fafc; --card: #fff; --border: #e2e8f0; }
+  @media (prefers-color-scheme: dark) {
+    :root { --accent: #60a5fa; --fg: #d7dce5; --dim: #8a93a5; --bg: #0b0e14; --card: #11151f; --border: #232a3a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); line-height: 1.65;
+         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width: 880px; margin: 0 auto; padding: 3rem 1.25rem 4rem; }
+  header.hero { text-align: center; padding: 3rem 1rem 1rem; }
+  header.hero img { width: 72px; height: 72px; }
+  h1 { font-size: 2.1rem; line-height: 1.2; margin: .75rem 0 .5rem; }
+  .tagline { font-size: 1.15rem; color: var(--dim); max-width: 640px; margin: 0 auto 1.5rem; }
+  .cta { display: inline-block; background: var(--accent); color: #fff; text-decoration: none;
+         padding: .7rem 1.4rem; border-radius: 8px; font-weight: 600; margin: .25rem; }
+  .cta.alt { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  h2 { font-size: 1.4rem; margin: 2.5rem 0 .75rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.2rem; }
+  .card h3 { margin: 0 0 .4rem; font-size: 1.02rem; }
+  .card p { margin: 0; color: var(--dim); font-size: .95rem; }
+  pre { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+        padding: 1rem; overflow-x: auto; font-size: .9rem; }
+  details { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+            padding: .7rem 1rem; margin: .5rem 0; }
+  summary { cursor: pointer; font-weight: 600; }
+  details p { color: var(--dim); }
+  footer { text-align: center; color: var(--dim); font-size: .9rem; padding: 2rem; border-top: 1px solid var(--border); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <img src="logo.svg" alt="filepeek logo">
+  <h1>View AI-generated files in your browser</h1>
+  <p class="tagline">filepeek is a free, self-hosted web viewer for the files AI agents produce —
+     Markdown, HTML, Excel, Word, PowerPoint, CSV, code, images, and PDFs — rendered, not raw.</p>
+  <a class="cta" href="https://github.com/thrinz/filepeek">Get it on GitHub</a>
+  <a class="cta alt" href="https://github.com/thrinz/filepeek#quick-start-local--wsl2">Quick start</a>
+</header>
+
+<main>
+  <h2>Made for AI coding-agent output</h2>
+  <p>Claude Code, ChatGPT, Cursor, or any coding agent just wrote a pile of <code>.md</code>,
+     <code>.html</code>, and <code>.xlsx</code> files into your WSL2 or Linux filesystem — and you're
+     squinting at raw markdown in a terminal. filepeek serves any directory as a browsable web UI
+     that renders what agents produce, the way it was meant to look.</p>
+
+  <h2>What it renders</h2>
+  <div class="grid">
+    <div class="card"><h3>📝 Markdown + Mermaid</h3><p>AI-written docs, plans, and reports rendered with tables, code blocks, and Mermaid diagrams.</p></div>
+    <div class="card"><h3>📊 Excel, Word, PowerPoint</h3><p>View xlsx, docx, and pptx in the browser — no Microsoft Office, no LibreOffice, no upload.</p></div>
+    <div class="card"><h3>🌐 HTML pages</h3><p>Agent-built dashboards and mockups served directly, ready to click through.</p></div>
+    <div class="card"><h3>💻 Code &amp; data</h3><p>~60 languages, CSV/TSV as sortable tables, images, SVG, and PDFs inline.</p></div>
+    <div class="card"><h3>🔍 Search &amp; organize</h3><p>Filename and full-text search, bookmarks, and a bookmarkable URL for every folder and file.</p></div>
+    <div class="card"><h3>🔐 Self-hosted &amp; private</h3><p>Your files never leave your machine. Optional HTTPS + password mode for cloud servers and Tailscale.</p></div>
+  </div>
+
+  <h2>Quick start</h2>
+  <pre><code>git clone https://github.com/thrinz/filepeek &amp;&amp; cd filepeek
+./install.sh
+FILEPEEK_ROOT=~/projects .venv/bin/python app.py</code></pre>
+  <p>Open <code>http://localhost:8765</code>. On WSL2 that URL works directly in your Windows browser.
+     One Python file, one HTML file, no database.</p>
+
+  <h2>Frequently asked questions</h2>
+  <details><summary>How do I view the Markdown files Claude Code or ChatGPT generates?</summary>
+    <p>Point filepeek at the folder your agent writes to (<code>FILEPEEK_ROOT=~/projects</code>) and open
+       localhost:8765 — every Markdown file renders with formatting, tables, code blocks, and Mermaid
+       diagrams instead of raw text.</p></details>
+  <details><summary>Can I open xlsx, docx, or pptx files without Microsoft Office?</summary>
+    <p>Yes. filepeek renders Excel workbooks (per-sheet tables), Word documents, and PowerPoint slides
+       directly in the browser using pure Python.</p></details>
+  <details><summary>Does it work on WSL2?</summary>
+    <p>That's the home turf — run it inside WSL2 and open localhost:8765 in your Windows browser.
+       Localhost forwarding is automatic.</p></details>
+  <details><summary>Is my data sent anywhere?</summary>
+    <p>No. filepeek is fully self-hosted and reads files straight off your disk.</p></details>
+  <details><summary>Is it free?</summary>
+    <p>Yes — free and open source under the MIT license.</p></details>
+</main>
+
+<footer>
+  <a href="https://github.com/thrinz/filepeek">GitHub</a> ·
+  <a href="https://github.com/thrinz/filepeek/blob/main/docs/INSTALL.md">Install guide</a> ·
+  MIT licensed
+</footer>
+
+</body>
+</html>
