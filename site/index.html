@@ -3,212 +3,183 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>filepeek — see what your AI actually built</title>
-<meta name="description" content="A single-file web viewer for AI-generated files. Renders Markdown, Mermaid, Office docs, code, and CSV from any directory — locally or on a server.">
-<meta property="og:title" content="filepeek">
-<meta property="og:description" content="See what your AI actually built. Markdown, Mermaid, xlsx/docx/pptx, code — rendered in your browser.">
+
+<title>filepeek — View AI-Generated Files in Your Browser | Markdown, Excel, HTML Viewer</title>
+<meta name="description" content="filepeek is a free, self-hosted viewer for AI-generated files. Render Markdown with Mermaid diagrams, view xlsx/docx/pptx without Office, preview HTML — straight from your Linux or WSL2 filesystem.">
+<link rel="canonical" href="https://filepeek.dev/">
+<link rel="icon" type="image/svg+xml" href="logo.svg">
+
+<!-- Open Graph / social previews -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="filepeek — View AI-Generated Files in Your Browser">
+<meta property="og:description" content="Self-hosted viewer for the files AI agents produce: Markdown with Mermaid, Excel/Word/PowerPoint, HTML, code, CSV, images, PDFs. One Python file, no database.">
+<meta property="og:url" content="https://filepeek.dev/">
 <meta property="og:image" content="https://filepeek.dev/img/markdown.png">
-<link rel="icon" href="logo.svg" type="image/svg+xml">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="filepeek — View AI-Generated Files in Your Browser">
+<meta name="twitter:description" content="Render Markdown, Mermaid, xlsx, docx, pptx, HTML and code from any folder — self-hosted, one Python file.">
+<meta name="twitter:image" content="https://filepeek.dev/img/markdown.png">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "filepeek",
+  "operatingSystem": "Linux, macOS, Windows (WSL2)",
+  "applicationCategory": "DeveloperApplication",
+  "description": "A single-file, self-hosted web viewer for AI-generated files: Markdown with Mermaid diagrams, HTML, Excel, Word, PowerPoint, CSV, code, images, and PDFs.",
+  "url": "https://filepeek.dev/",
+  "downloadUrl": "https://github.com/thrinz/filepeek",
+  "softwareRequirements": "Python 3.10+",
+  "license": "https://opensource.org/licenses/MIT",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How do I view the Markdown files Claude Code or ChatGPT generates?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Point filepeek at the folder your AI agent writes to and open localhost:8765 — every Markdown file renders with formatting, tables, code blocks, and Mermaid diagrams instead of raw text." }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I open xlsx, docx, or pptx files without Microsoft Office?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. filepeek renders Excel workbooks, Word documents, and PowerPoint slides directly in the browser using pure Python — no Office, no LibreOffice, no cloud upload." }
+    },
+    {
+      "@type": "Question",
+      "name": "Does filepeek work on WSL2?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes — run it inside WSL2 and open localhost:8765 in your Windows browser. Localhost forwarding is automatic, no configuration needed." }
+    },
+    {
+      "@type": "Question",
+      "name": "Is my data sent anywhere?",
+      "acceptedAnswer": { "@type": "Answer", "text": "No. filepeek is fully self-hosted and reads files straight off your disk. Nothing is uploaded to any third-party service." }
+    },
+    {
+      "@type": "Question",
+      "name": "Is filepeek free?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes — filepeek is free and open source under the MIT license." }
+    }
+  ]
+}
+</script>
+
 <style>
-  :root {
-    --bg: #0b0f1a;
-    --bg-soft: #111827;
-    --card: #161e2e;
-    --text: #e5e9f0;
-    --muted: #94a3b8;
-    --accent: #6366f1;
-    --accent-soft: #818cf8;
-    --border: #243044;
-    --code-bg: #0f1524;
+  :root { --accent: #2563eb; --fg: #1e293b; --dim: #475569; --bg: #f8fafc; --card: #fff; --border: #e2e8f0; }
+  @media (prefers-color-scheme: dark) {
+    :root { --accent: #60a5fa; --fg: #d7dce5; --dim: #8a93a5; --bg: #0b0e14; --card: #11151f; --border: #232a3a; }
   }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: var(--bg); color: var(--text);
-    font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  }
-  a { color: var(--accent-soft); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); line-height: 1.65;
+         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width: 880px; margin: 0 auto; padding: 1rem 1.25rem 4rem; }
+  header.hero { text-align: center; padding: 3rem 1rem 1rem; }
+  header.hero img { width: 72px; height: 72px; }
+  h1 { font-size: 2.1rem; line-height: 1.2; margin: .75rem 0 .5rem; }
+  .tagline { font-size: 1.15rem; color: var(--dim); max-width: 640px; margin: 0 auto 1.5rem; }
+  .cta { display: inline-block; background: var(--accent); color: #fff; text-decoration: none;
+         padding: .7rem 1.4rem; border-radius: 8px; font-weight: 600; margin: .25rem; }
+  .cta.alt { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  h2 { font-size: 1.4rem; margin: 2.5rem 0 .75rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.2rem; }
+  .card h3 { margin: 0 0 .4rem; font-size: 1.02rem; }
+  .card p { margin: 0; color: var(--dim); font-size: .95rem; }
+  pre { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+        padding: 1rem; overflow-x: auto; font-size: .9rem; }
+  details { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+            padding: .7rem 1rem; margin: .5rem 0; }
+  summary { cursor: pointer; font-weight: 600; }
+  details p { color: var(--dim); }
+  footer { text-align: center; color: var(--dim); font-size: .9rem; padding: 2rem; border-top: 1px solid var(--border); }
+  a { color: var(--accent); }
 
-  /* hero */
-  header { padding: 72px 0 40px; text-align: center; }
-  header img.logo { width: 64px; height: 64px; }
-  h1 { font-size: 44px; margin: 16px 0 8px; letter-spacing: -1px; }
-  .tagline { font-size: 22px; color: var(--muted); max-width: 640px; margin: 0 auto 28px; }
-  .tagline b { color: var(--text); }
-  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 28px; }
-  .btn {
-    display: inline-block; padding: 12px 22px; border-radius: 10px; font-weight: 600;
-    border: 1px solid var(--border);
-  }
-  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .btn-primary:hover { background: var(--accent-soft); text-decoration: none; }
-  .btn-ghost:hover { border-color: var(--accent-soft); text-decoration: none; }
-  .install {
-    display: inline-flex; align-items: center; gap: 12px;
-    background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px;
-    padding: 12px 18px; font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
-    font-size: 14px; color: #a5b4fc; cursor: pointer;
-  }
-  .install span.dollar { color: #475569; user-select: none; }
-  .hero-shot { margin: 48px auto 0; max-width: 980px; }
-
-  /* screenshots */
-  .shot {
-    border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
-    box-shadow: 0 24px 60px -24px rgba(0,0,0,.7);
-    background: var(--card);
-  }
-  .shot img { display: block; width: 100%; height: auto; }
-
-  /* tour sections */
-  section.tour { padding: 56px 0; border-top: 1px solid var(--border); }
-  .row { display: grid; grid-template-columns: 5fr 7fr; gap: 48px; align-items: center; }
-  .row.flip .copy { order: 2; }
-  @media (max-width: 800px) { .row, .row.flip .copy { display: block; order: 0; } .row .copy { margin-bottom: 24px; } }
-  .kicker { color: var(--accent-soft); font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px; }
-  section.tour h2 { font-size: 28px; margin: 8px 0 12px; letter-spacing: -.5px; }
-  section.tour p { color: var(--muted); }
-  section.tour p code, .features code {
-    background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px;
-    padding: 1px 6px; font-size: 13px; color: #c7d2fe;
-  }
-
-  /* feature grid */
-  .features { padding: 64px 0; border-top: 1px solid var(--border); }
-  .features h2 { text-align: center; font-size: 28px; margin-bottom: 36px; }
-  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
-  .cell {
-    background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px;
-  }
-  .cell h3 { font-size: 16px; margin-bottom: 6px; }
-  .cell p { color: var(--muted); font-size: 14px; }
-
-  /* deploy strip */
-  .deploy { padding: 64px 0; border-top: 1px solid var(--border); text-align: center; }
-  .deploy h2 { font-size: 28px; margin-bottom: 12px; }
-  .deploy p { color: var(--muted); max-width: 620px; margin: 0 auto 24px; }
-
-  footer {
-    border-top: 1px solid var(--border); padding: 36px 0; text-align: center;
-    color: var(--muted); font-size: 14px;
-  }
+  .tour-video { max-width: 880px; margin: 2rem auto 0; padding: 0 1.25rem; }
+  .tour-video video, .shots img { display: block; width: 100%; height: auto; border-radius: 10px;
+    border: 1px solid var(--border); box-shadow: 0 18px 44px -20px rgba(0,0,0,.45); }
+  .tour-video .hint { text-align: center; color: var(--dim); font-size: .85rem; margin-top: .5rem; }
+  .shots { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 700px) { .shots { grid-template-columns: 1fr; } }
+  .shots figure { margin: 0; }
+  .shots figcaption { color: var(--dim); font-size: .85rem; margin-top: .4rem; text-align: center; }
 </style>
 </head>
 <body>
 
-<header class="wrap">
-  <img class="logo" src="logo.svg" alt="filepeek logo">
-  <h1>filepeek</h1>
-  <p class="tagline">Your coding agent just wrote a pile of <b>.md</b>, <b>.html</b>, and <b>.xlsx</b> files.
-  Stop squinting at raw markdown in a terminal — <b>see them rendered.</b></p>
-  <div class="cta">
-    <a class="btn btn-primary" href="https://github.com/thrinz/filepeek">View on GitHub</a>
-    <a class="btn btn-ghost" href="https://github.com/thrinz/filepeek/blob/main/docs/INSTALL.md">Install guide</a>
-  </div>
-  <div class="install" onclick="navigator.clipboard.writeText('git clone https://github.com/thrinz/filepeek && cd filepeek && ./install.sh')" title="Click to copy">
-    <span class="dollar">$</span> git clone https://github.com/thrinz/filepeek &amp;&amp; cd filepeek &amp;&amp; ./install.sh
-  </div>
-  <div class="hero-shot shot">
-    <video controls preload="metadata" poster="img/markdown.png" style="display:block;width:100%;height:auto;" aria-label="90-second narrated tour of filepeek">
-      <source src="tour.mp4" type="video/mp4">
-    </video>
-  </div>
-  <p style="color:var(--muted);font-size:13px;margin-top:10px;">▶ 78-second narrated tour</p>
+<header class="hero">
+  <img src="logo.svg" alt="filepeek logo">
+  <h1>View AI-generated files in your browser</h1>
+  <p class="tagline">filepeek is a free, self-hosted web viewer for the files AI agents produce —
+     Markdown, HTML, Excel, Word, PowerPoint, CSV, code, images, and PDFs — rendered, not raw.</p>
+  <a class="cta" href="https://github.com/thrinz/filepeek">Get it on GitHub</a>
+  <a class="cta alt" href="https://github.com/thrinz/filepeek/blob/main/docs/INSTALL.md">Quick start</a>
 </header>
 
-<section class="tour wrap">
-  <div class="row">
-    <div class="copy">
-      <div class="kicker">Markdown + Mermaid</div>
-      <h2>Diagrams render, not just text</h2>
-      <p>Markdown gets full rendering — headings, tables, syntax-highlighted code blocks —
-      and <code>mermaid</code> fences become real diagrams. The architecture doc your agent
-      wrote finally looks like an architecture doc.</p>
-    </div>
-    <div class="shot"><img src="img/markdown.png" alt="Rendered Markdown with Mermaid flowchart"></div>
-  </div>
-</section>
+<div class="tour-video">
+  <video controls preload="metadata" poster="img/markdown.png" aria-label="78-second narrated tour of filepeek">
+    <source src="tour.mp4" type="video/mp4">
+  </video>
+  <p class="hint">▶ 78-second narrated tour</p>
+</div>
 
-<section class="tour wrap">
-  <div class="row flip">
-    <div class="copy">
-      <div class="kicker">Office files</div>
-      <h2>xlsx, docx, pptx — no Office needed</h2>
-      <p>Spreadsheets render as styled tables with all their sheets, documents and decks
-      render as pages. Straight in the browser, on a machine that has never seen
-      Microsoft Office.</p>
-    </div>
-    <div class="shot"><img src="img/spreadsheet.png" alt="An xlsx spreadsheet rendered in the browser"></div>
-  </div>
-</section>
+<main>
+  <h2>Made for AI coding-agent output</h2>
+  <p>Claude Code, ChatGPT, Cursor, or any coding agent just wrote a pile of <code>.md</code>,
+     <code>.html</code>, and <code>.xlsx</code> files into your WSL2 or Linux filesystem — and you're
+     squinting at raw markdown in a terminal. filepeek serves any directory as a browsable web UI
+     that renders what agents produce, the way it was meant to look.</p>
 
-<section class="tour wrap">
-  <div class="row">
-    <div class="copy">
-      <div class="kicker">HTML, served</div>
-      <h2>Generated reports open as pages</h2>
-      <p>When your agent writes an HTML dashboard or report, filepeek serves it
-      directly — styles, layout and all. No "view source" squinting, no copying
-      files out to open them.</p>
-    </div>
-    <div class="shot"><img src="img/html.png" alt="An HTML dashboard rendered directly inside filepeek"></div>
-  </div>
-</section>
-
-<section class="tour wrap">
-  <div class="row flip">
-    <div class="copy">
-      <div class="kicker">Code &amp; data</div>
-      <h2>~60 file types, highlighted</h2>
-      <p>Source files get syntax highlighting; CSV and TSV become sortable tables;
-      images, SVG, and PDF display inline. HTML files are served directly, so the
-      report your agent generated opens as a page, not as markup soup.</p>
-    </div>
-    <div class="shot"><img src="img/code.png" alt="Python source with syntax highlighting"></div>
-  </div>
-</section>
-
-<section class="tour wrap">
-  <div class="row">
-    <div class="copy">
-      <div class="kicker">Find anything</div>
-      <h2>Search names <em>and</em> contents</h2>
-      <p>Filename search and full-content search across the whole tree. Every view has a
-      permalink, so "look at this" is a URL — bookmarks keep your frequent files one
-      click away.</p>
-    </div>
-    <div class="shot"><img src="img/search.png" alt="Search results across filenames and file contents"></div>
-  </div>
-</section>
-
-<section class="features wrap">
-  <h2>And the rest of the toolbox</h2>
+  <h2>What it renders</h2>
   <div class="grid">
-    <div class="cell"><h3>✏️ Inline editing</h3><p>Fix a typo in the browser and save — no editor round-trip.</p></div>
-    <div class="cell"><h3>📦 Upload, download, zip</h3><p>Drop files in, pull files out, or grab a whole folder as a zip.</p></div>
-    <div class="cell"><h3>🔗 Permalinks &amp; bookmarks</h3><p>Share a rendered view as a stable URL; pin what you revisit.</p></div>
-    <div class="cell"><h3>🔒 Locked down by default</h3><p>Binds <code>127.0.0.1</code> locally; refuses to start exposed without auth. PBKDF2 passwords, signed sessions, per-IP lockout.</p></div>
-    <div class="cell"><h3>🪶 Absurdly small</h3><p>One Python file, one HTML file, no database. Read it over coffee.</p></div>
-    <div class="cell"><h3>🤖 Scriptable</h3><p>Bearer-token API access for agents and CI: <code>Authorization: Bearer …</code></p></div>
+    <div class="card"><h3>📝 Markdown + Mermaid</h3><p>AI-written docs, plans, and reports rendered with tables, code blocks, and Mermaid diagrams.</p></div>
+    <div class="card"><h3>📊 Excel, Word, PowerPoint</h3><p>View xlsx, docx, and pptx in the browser — no Microsoft Office, no LibreOffice, no upload.</p></div>
+    <div class="card"><h3>🌐 HTML pages</h3><p>Agent-built dashboards and mockups served directly, ready to click through.</p></div>
+    <div class="card"><h3>💻 Code &amp; data</h3><p>~60 languages, CSV/TSV as sortable tables, images, SVG, and PDFs inline.</p></div>
+    <div class="card"><h3>🔍 Search &amp; organize</h3><p>Filename and full-text search, bookmarks, and a bookmarkable URL for every folder and file.</p></div>
+    <div class="card"><h3>🔐 Self-hosted &amp; private</h3><p>Your files never leave your machine. Optional HTTPS + password mode for cloud servers and Tailscale.</p></div>
   </div>
-</section>
 
-<section class="deploy wrap">
-  <h2>Runs where your files are</h2>
-  <p><b>WSL2 &amp; Linux:</b> one command, opens in your Windows browser.
-  <b>Any cloud server:</b> paste one cloud-init file or run one installer — you get HTTPS,
-  password auth, and a systemd service. Prefer zero public exposure? There's a
-  Tailscale mode.</p>
-  <a class="btn btn-primary" href="https://github.com/thrinz/filepeek/blob/main/docs/INSTALL.md">See all install options</a>
-</section>
+  <h2>See it in action</h2>
+  <div class="shots">
+    <figure><img src="img/markdown.png" loading="lazy" alt="Markdown document with a rendered Mermaid architecture diagram"><figcaption>Markdown with Mermaid diagrams</figcaption></figure>
+    <figure><img src="img/spreadsheet.png" loading="lazy" alt="Excel workbook rendered as styled tables in the browser"><figcaption>xlsx rendered, sheet by sheet</figcaption></figure>
+    <figure><img src="img/html.png" loading="lazy" alt="HTML dashboard served directly inside filepeek"><figcaption>HTML reports open as pages</figcaption></figure>
+    <figure><img src="img/search.png" loading="lazy" alt="Full-text search results across file names and contents"><figcaption>Search names and contents</figcaption></figure>
+  </div>
+
+  <h2>Quick start</h2>
+  <pre><code>git clone https://github.com/thrinz/filepeek &amp;&amp; cd filepeek
+./install.sh
+FILEPEEK_ROOT=~/projects .venv/bin/python app.py</code></pre>
+  <p>Open <code>http://localhost:8765</code>. On WSL2 that URL works directly in your Windows browser.
+     One Python file, one HTML file, no database.</p>
+
+  <h2>Frequently asked questions</h2>
+  <details><summary>How do I view the Markdown files Claude Code or ChatGPT generates?</summary>
+    <p>Point filepeek at the folder your agent writes to (<code>FILEPEEK_ROOT=~/projects</code>) and open
+       localhost:8765 — every Markdown file renders with formatting, tables, code blocks, and Mermaid
+       diagrams instead of raw text.</p></details>
+  <details><summary>Can I open xlsx, docx, or pptx files without Microsoft Office?</summary>
+    <p>Yes. filepeek renders Excel workbooks (per-sheet tables), Word documents, and PowerPoint slides
+       directly in the browser using pure Python.</p></details>
+  <details><summary>Does it work on WSL2?</summary>
+    <p>That's the home turf — run it inside WSL2 and open localhost:8765 in your Windows browser.
+       Localhost forwarding is automatic.</p></details>
+  <details><summary>Is my data sent anywhere?</summary>
+    <p>No. filepeek is fully self-hosted and reads files straight off your disk.</p></details>
+  <details><summary>Is it free?</summary>
+    <p>Yes — free and open source under the MIT license.</p></details>
+</main>
 
 <footer>
-  <div class="wrap">
-    MIT licensed · <a href="https://github.com/thrinz/filepeek">github.com/thrinz/filepeek</a> ·
-    <a href="https://github.com/thrinz/filepeek/issues">Issues &amp; support</a>
-  </div>
+  <a href="https://github.com/thrinz/filepeek">GitHub</a> ·
+  <a href="https://github.com/thrinz/filepeek/blob/main/docs/INSTALL.md">Install guide</a> ·
+  MIT licensed
 </footer>
 
 </body>
