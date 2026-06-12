@@ -1,0 +1,1388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>filepeek — __FILEPEEK_ROOT__</title>
+<link rel="icon" type="image/svg+xml" href="/static/logo.svg">
+<script src="/static/vendor/tailwind.js"></script>
+<script>
+// Shared "ink" design tokens — keep in sync with webterm's static/style.css :root palette
+tailwind.config = {
+  darkMode: "class",
+  theme: { extend: { colors: { ink: {
+    bg: "#0b0e14", side: "#11151f", hover: "#1a2030", active: "#222233",
+    border: "#232a3a", fg: "#d7dce5", dim: "#8a93a5",
+  } } } },
+};
+// Apply saved theme before first paint to avoid a light flash
+if (localStorage.getItem("filepeek-theme") === "dark" ||
+    (!localStorage.getItem("filepeek-theme") && matchMedia("(prefers-color-scheme: dark)").matches))
+  document.documentElement.classList.add("dark");
+</script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  [x-cloak] { display: none !important; }
+  #editor { white-space: pre; tab-size: 2; }
+  #editor.wrap { white-space: pre-wrap; word-break: break-word; }
+  .dropdown { display: none; }
+  .dropdown.show { display: block; }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid #e2e8f0;
+    border-top-color: #2563eb;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  /* Left-panel scroller */
+  #tree { scrollbar-width: thin; scrollbar-color: #cbd5e1 #f8fafc; }
+  #tree::-webkit-scrollbar { width: 10px; }
+  #tree::-webkit-scrollbar-track { background: #f8fafc; }
+  #tree::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 5px; border: 2px solid #f8fafc; }
+  #tree::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  #csv-view table td, #csv-view table th { max-width: 28rem; overflow: hidden; text-overflow: ellipsis; }
+  /* Word-like rendering for .docx preview (Tailwind preflight strips default tag styling) */
+  #preview .docx-bg { background: #f1f5f9; margin: -1rem; padding: 2rem 1rem; min-height: 100%; }
+  .docx-page {
+    max-width: 8.5in; margin: 0 auto; background: #fff; padding: 1in;
+    box-shadow: 0 1px 6px rgba(0,0,0,.18);
+    font-family: Calibri, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 11pt; line-height: 1.5; color: #212121;
+  }
+  .docx-page h1 { font-size: 22pt; font-weight: 700; margin: 0 0 .4em; line-height: 1.2; }
+  .docx-page h2 { font-size: 16pt; font-weight: 600; margin: .9em 0 .3em; color: #2e74b5; }
+  .docx-page h3 { font-size: 13pt; font-weight: 600; margin: .8em 0 .3em; color: #2e74b5; }
+  .docx-page h4, .docx-page h5, .docx-page h6 { font-size: 11pt; font-weight: 700; margin: .7em 0 .2em; color: #2e74b5; }
+  .docx-page p { margin: 0 0 .6em; }
+  .docx-page table { border-collapse: collapse; margin: .8em 0; }
+  .docx-page td, .docx-page th { border: 1px solid #9ca3af; padding: 5px 9px; vertical-align: top; }
+  .docx-page strong { font-weight: 700; }
+  .docx-page em { font-style: italic; }
+  /* PowerPoint-like rendering for .pptx preview (one card per slide) */
+  #preview .pptx-bg { background: #f1f5f9; margin: -1rem; padding: 1.5rem; min-height: 100%; }
+  .pptx-slide {
+    max-width: 9in; margin: 0 auto 1.25rem; background: #fff; padding: 1.25rem 1.75rem 1.5rem;
+    border: 1px solid #e2e8f0; border-radius: 6px; box-shadow: 0 1px 6px rgba(0,0,0,.12);
+    font-family: Calibri, "Segoe UI", Helvetica, Arial, sans-serif; color: #212121;
+    aspect-ratio: 16 / 9; overflow: auto;
+  }
+  .pptx-slide-num { font-size: 10pt; color: #94a3b8; font-weight: 600; margin-bottom: .5rem; }
+  .pptx-slide h2 { font-size: 20pt; font-weight: 700; margin: 0 0 .6em; color: #1e293b; line-height: 1.2; }
+  .pptx-slide p { font-size: 13pt; margin: 0 0 .4em; line-height: 1.4; }
+  .pptx-slide .pptx-empty, .pptx-empty { color: #94a3b8; font-style: italic; }
+  /* Markdown rendering for .md preview (Tailwind has no typography plugin, and
+     its preflight reset strips default heading/list/code styling). */
+  .markdown-body { color: #1e293b; line-height: 1.65; font-size: 14px; }
+  .markdown-body h1, .markdown-body h2, .markdown-body h3,
+  .markdown-body h4, .markdown-body h5, .markdown-body h6 {
+    font-weight: 600; line-height: 1.25; margin: 1.4em 0 .5em; }
+  .markdown-body h1 { font-size: 1.9em; border-bottom: 1px solid #e2e8f0; padding-bottom: .3em; }
+  .markdown-body h2 { font-size: 1.5em; border-bottom: 1px solid #e2e8f0; padding-bottom: .3em; }
+  .markdown-body h3 { font-size: 1.25em; }
+  .markdown-body h4 { font-size: 1.05em; }
+  .markdown-body h5, .markdown-body h6 { font-size: .95em; color: #475569; }
+  .markdown-body p { margin: 0 0 1em; }
+  .markdown-body ul, .markdown-body ol { margin: 0 0 1em; padding-left: 1.8em; }
+  .markdown-body ul { list-style: disc; }
+  .markdown-body ol { list-style: decimal; }
+  .markdown-body li { margin: .25em 0; }
+  .markdown-body li > ul, .markdown-body li > ol { margin: .25em 0; }
+  .markdown-body a { color: #2563eb; text-decoration: underline; }
+  .markdown-body strong { font-weight: 700; }
+  .markdown-body em { font-style: italic; }
+  .markdown-body blockquote {
+    margin: 0 0 1em; padding: .2em 1em; color: #475569;
+    border-left: 4px solid #cbd5e1; background: #f8fafc; }
+  .markdown-body code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .88em; background: #f1f5f9; padding: .15em .4em; border-radius: 4px; }
+  .markdown-body pre {
+    background: #f1f5f9; padding: .9em 1em; border-radius: 6px;
+    overflow-x: auto; margin: 0 0 1em; }
+  .markdown-body pre code { background: none; padding: 0; font-size: .85em; }
+  .markdown-body table { border-collapse: collapse; margin: 0 0 1em; }
+  .markdown-body th, .markdown-body td { border: 1px solid #cbd5e1; padding: 6px 12px; }
+  .markdown-body th { background: #f1f5f9; font-weight: 600; }
+  .markdown-body hr { border: 0; border-top: 1px solid #e2e8f0; margin: 1.5em 0; }
+  .markdown-body img { max-width: 100%; }
+
+  /* ---- dark theme (family "ink" palette, shared with webterm) ---- */
+  .dark .spinner { border-color: #232a3a; border-top-color: #60a5fa; }
+  .dark #tree { scrollbar-color: #232a3a #11151f; }
+  .dark #tree::-webkit-scrollbar-track { background: #11151f; }
+  .dark #tree::-webkit-scrollbar-thumb { background: #232a3a; border-color: #11151f; }
+  .dark #tree::-webkit-scrollbar-thumb:hover { background: #2e3850; }
+  .dark #editor { background: #0b0e14; color: #d7dce5; }
+  /* office previews keep white "paper" pages; only the surround dims */
+  .dark #preview .docx-bg, .dark #preview .pptx-bg { background: #0b0e14; }
+  .dark .markdown-body { color: #d7dce5; }
+  .dark .markdown-body h1, .dark .markdown-body h2 { border-bottom-color: #232a3a; }
+  .dark .markdown-body h5, .dark .markdown-body h6 { color: #8a93a5; }
+  .dark .markdown-body a { color: #60a5fa; }
+  .dark .markdown-body blockquote { color: #8a93a5; border-left-color: #232a3a; background: #11151f; }
+  .dark .markdown-body code, .dark .markdown-body pre { background: #1a2030; }
+  .dark .markdown-body th, .dark .markdown-body td { border-color: #232a3a; }
+  .dark .markdown-body th { background: #1a2030; }
+  .dark .markdown-body hr { border-top-color: #232a3a; }
+</style>
+</head>
+<body class="h-screen flex flex-col bg-slate-50 dark:bg-ink-bg text-slate-800 dark:text-ink-fg text-sm">
+
+<header class="bg-slate-800 dark:bg-ink-side text-white px-4 py-2 flex items-center gap-4 shadow">
+  <div class="flex items-center gap-2">
+    <img src="/static/logo.svg" alt="" class="w-6 h-6">
+    <h1 class="font-semibold">filepeek</h1>
+  </div>
+  <div class="relative">
+    <input id="search-content"
+           class="bg-slate-900 dark:bg-ink-bg border border-slate-600 rounded px-3 py-1.5 w-80 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+           placeholder="Full-text search in ASCII files...">
+    <div id="content-dropdown"
+         class="dropdown absolute left-0 right-0 top-full mt-1 bg-white dark:bg-ink-side text-slate-800 dark:text-ink-fg border border-slate-200 dark:border-ink-border rounded shadow-lg max-h-80 overflow-y-auto z-50"></div>
+  </div>
+  <div class="ml-auto flex items-center gap-4">
+    <div class="relative">
+      <button id="bookmark-menu-btn" class="flex items-center gap-2 text-xs text-slate-400 dark:text-ink-dim hover:text-white">
+        <span>&#11088; Bookmarks</span>
+        <span id="bookmark-count" class="bg-slate-700 text-slate-200 px-1.5 rounded">0</span>
+        <span class="text-[10px]">&#9662;</span>
+      </button>
+      <div id="bookmark-menu"
+           class="dropdown absolute right-0 top-full mt-1 bg-white dark:bg-ink-side text-slate-800 dark:text-ink-fg border border-slate-200 dark:border-ink-border rounded shadow-lg w-80 max-h-96 overflow-y-auto z-50"></div>
+    </div>
+    <div class="relative">
+      <button id="permlink-menu-btn" class="flex items-center gap-2 text-xs text-slate-400 dark:text-ink-dim hover:text-white">
+        <span>&#128279; Perm Links</span>
+        <span id="permlink-count" class="bg-slate-700 text-slate-200 px-1.5 rounded">0</span>
+        <span class="text-[10px]">&#9662;</span>
+      </button>
+      <div id="permlink-menu"
+           class="dropdown absolute right-0 top-full mt-1 bg-white dark:bg-ink-side text-slate-800 dark:text-ink-fg border border-slate-200 dark:border-ink-border rounded shadow-lg w-80 max-h-96 overflow-y-auto z-50"></div>
+    </div>
+    <button id="theme-toggle" title="Toggle light/dark theme"
+            class="text-base leading-none text-slate-400 dark:text-ink-dim hover:text-white">&#9681;</button>
+  </div>
+</header>
+
+<main class="flex-1 flex min-h-0">
+  <!-- LEFT PANEL: 30% -->
+  <aside id="left-panel" class="w-[30%] min-w-[280px] bg-white dark:bg-ink-side border-r border-slate-200 dark:border-ink-border flex flex-col">
+    <div class="p-2 border-b border-slate-200 dark:border-ink-border flex flex-wrap items-center gap-2">
+      <button id="btn-new-file" class="px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">+ File</button>
+      <button id="btn-new-folder" class="px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">+ Folder</button>
+      <button id="btn-upload" title="Upload file (max 500MB)" class="px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">&#11014; Upload</button>
+      <input type="file" id="upload-input" class="hidden">
+      <button id="btn-zip-folder" title="Download this folder as a zip (max 500MB)" class="px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">&#11015; Download Folder</button>
+      <button id="btn-search" title="Search filenames"
+              class="px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">&#128269;</button>
+      <button id="btn-refresh" title="Refresh folder"
+              class="px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">&#128260;</button>
+      <select id="sort-select" class="ml-auto px-2 py-1 border border-slate-300 dark:border-ink-border rounded bg-white dark:bg-ink-side">
+        <option value="name">Name</option>
+        <option value="modified">Date modified</option>
+      </select>
+    </div>
+
+    <div id="filename-search-wrap" class="hidden p-2 border-b border-slate-200 dark:border-ink-border relative">
+      <input id="search-filename"
+             class="w-full px-2 py-1 border border-slate-300 dark:border-ink-border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+             placeholder="Search filenames (contains)...">
+      <div id="filename-dropdown"
+           class="dropdown absolute left-2 right-2 top-full mt-1 bg-white dark:bg-ink-side border border-slate-200 dark:border-ink-border rounded shadow-lg max-h-80 overflow-y-auto z-40"></div>
+    </div>
+
+    <div class="flex items-center bg-slate-50 dark:bg-ink-bg border-b border-slate-200 dark:border-ink-border">
+      <div id="breadcrumb" class="flex-1 px-3 py-1.5 font-mono text-xs overflow-x-auto whitespace-nowrap"></div>
+      <button id="btn-bookmark-folder" title="Bookmark this folder"
+              class="px-2.5 py-1.5 text-base leading-none text-slate-300 hover:text-yellow-500">&#9733;</button>
+    </div>
+
+    <div id="tree" class="flex-1 overflow-y-auto py-1"></div>
+  </aside>
+
+  <!-- DRAGGABLE SPLITTER -->
+  <div id="splitter"
+       class="w-1.5 shrink-0 cursor-col-resize bg-slate-200 dark:bg-ink-active hover:bg-blue-400 active:bg-blue-500 transition-colors"></div>
+
+  <!-- RIGHT PANEL -->
+  <section class="flex-1 flex flex-col bg-white dark:bg-ink-side min-w-0">
+    <div id="right-toolbar" class="hidden p-2 border-b border-slate-200 dark:border-ink-border flex flex-wrap items-center gap-2">
+      <button id="btn-edit" class="px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">Edit</button>
+      <button id="btn-save" class="hidden px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded">Save</button>
+      <button id="btn-copy" class="px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">Copy</button>
+      <button id="btn-wrap" title="Toggle soft line wrap" class="px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">Wrap</button>
+      <button id="btn-toggle-preview" class="hidden px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">Preview</button>
+      <button id="btn-download" class="hidden px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">Download</button>
+      <button id="btn-rename" class="hidden px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">Rename</button>
+      <button id="btn-copy-to" class="hidden px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">Copy to&hellip;</button>
+      <button id="btn-move-to" class="hidden px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">Move to&hellip;</button>
+      <button id="btn-delete" class="hidden px-3 py-1 border border-red-300 dark:border-red-900 text-red-600 dark:text-red-400 rounded hover:bg-red-50 dark:hover:bg-red-950">Delete</button>
+      <button id="btn-permlink" class="hidden px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">&#128279; Perm Link</button>
+      <div id="file-info" class="ml-auto font-mono text-xs text-slate-500 dark:text-ink-dim truncate"></div>
+    </div>
+
+    <div id="placeholder" class="flex-1 flex flex-col items-center justify-center text-slate-400 dark:text-ink-dim gap-3">
+      <div class="text-6xl">&#128193;</div>
+      <div>Select a file from the left panel</div>
+    </div>
+
+    <div id="loader" class="hidden flex-1 flex-col items-center justify-center gap-3 text-slate-500 dark:text-ink-dim">
+      <div class="spinner"></div>
+      <div id="loader-text" class="text-xs font-mono">Loading...</div>
+    </div>
+
+    <div id="editor-wrap" class="hidden flex-1 flex min-h-0">
+      <textarea id="editor" readonly spellcheck="false"
+                class="flex-1 p-3 font-mono text-[13px] outline-none resize-none read-only:bg-slate-50 dark:read-only:bg-ink-side overflow-auto"></textarea>
+      <div id="preview" class="hidden flex-1 p-4 overflow-auto prose max-w-none"></div>
+      <div id="mermaid-view" class="hidden flex-1 overflow-auto p-4 flex items-start justify-center bg-slate-50 dark:bg-ink-bg"></div>
+      <iframe id="preview-iframe" class="hidden flex-1 w-full h-full border-0" sandbox="allow-scripts allow-same-origin allow-popups allow-forms"></iframe>
+      <div id="csv-view" class="hidden flex-1 overflow-auto p-3"></div>
+      <div id="json-view" class="hidden flex-1 overflow-auto p-3"></div>
+      <div id="img-view" class="hidden flex-1 overflow-auto p-4 flex items-center justify-center bg-slate-100 dark:bg-ink-hover"></div>
+      <iframe id="pdf-view" class="hidden flex-1 w-full h-full border-0"></iframe>
+      <div id="video-view" class="hidden flex-1 overflow-auto flex items-center justify-center bg-black">
+        <video controls class="max-w-full max-h-full"></video>
+      </div>
+      <div id="audio-view" class="hidden flex-1 overflow-auto flex items-center justify-center bg-slate-100 dark:bg-ink-hover p-4">
+        <audio controls class="w-full max-w-xl"></audio>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="permlink-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+  <div class="bg-white dark:bg-ink-side rounded-lg shadow-xl w-full max-w-lg mx-4 p-5">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-semibold text-base">Permanent Link</h2>
+      <button id="permlink-close" class="text-slate-400 dark:text-ink-dim hover:text-slate-600 dark:hover:text-ink-fg text-2xl leading-none">&times;</button>
+    </div>
+    <p class="text-xs text-slate-500 dark:text-ink-dim mb-2">Opens the rendered file in a new tab.</p>
+    <div class="flex gap-2">
+      <input id="permlink-url" readonly
+             class="flex-1 px-2 py-1.5 border border-slate-300 dark:border-ink-border rounded bg-slate-50 dark:bg-ink-bg font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <button id="permlink-copy" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded whitespace-nowrap">Copy</button>
+    </div>
+    <div class="mt-3 text-right">
+      <a id="permlink-open" target="_blank" rel="noopener" class="text-blue-600 dark:text-blue-400 hover:underline text-xs">Open in new tab &#8599;</a>
+    </div>
+  </div>
+</div>
+
+<div id="rename-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+  <div class="bg-white dark:bg-ink-side rounded-lg shadow-xl w-full max-w-lg mx-4 p-5">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-semibold text-base">Rename File</h2>
+      <button id="rename-close" class="text-slate-400 dark:text-ink-dim hover:text-slate-600 dark:hover:text-ink-fg text-2xl leading-none">&times;</button>
+    </div>
+    <p class="text-xs text-slate-500 dark:text-ink-dim mb-2">Edit the full file name, including the extension.</p>
+    <input id="rename-input" spellcheck="false"
+           class="w-full px-2 py-1.5 border border-slate-300 dark:border-ink-border rounded font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <div class="mt-4 flex justify-end gap-2">
+      <button id="rename-cancel" class="px-3 py-1.5 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">Cancel</button>
+      <button id="rename-save" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="transfer-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+  <div class="bg-white dark:bg-ink-side rounded-lg shadow-xl w-full max-w-lg mx-4 p-5 flex flex-col" style="max-height: 80vh;">
+    <div class="flex items-center justify-between mb-2">
+      <h2 id="transfer-title" class="font-semibold text-base">Copy to&hellip;</h2>
+      <button id="transfer-close" class="text-slate-400 dark:text-ink-dim hover:text-slate-600 dark:hover:text-ink-fg text-2xl leading-none">&times;</button>
+    </div>
+    <p class="text-xs text-slate-500 dark:text-ink-dim mb-2">
+      <span id="transfer-subject" class="font-mono"></span> &rarr; choose a destination folder.
+    </p>
+    <div id="transfer-breadcrumb" class="px-2 py-1.5 bg-slate-50 dark:bg-ink-bg border border-slate-200 dark:border-ink-border rounded font-mono text-xs overflow-x-auto whitespace-nowrap mb-2"></div>
+    <div id="transfer-list" class="flex-1 overflow-y-auto border border-slate-200 dark:border-ink-border rounded min-h-[8rem]"></div>
+    <div class="mt-4 flex items-center justify-end gap-2">
+      <span id="transfer-dest" class="mr-auto text-xs text-slate-500 dark:text-ink-dim font-mono truncate"></span>
+      <button id="transfer-cancel" class="px-3 py-1.5 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">Cancel</button>
+      <button id="transfer-confirm" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded">Copy here</button>
+    </div>
+  </div>
+</div>
+
+<div id="zip-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+  <div class="bg-white dark:bg-ink-side rounded-lg shadow-xl w-full max-w-md mx-4 p-5">
+    <div class="flex items-center justify-between mb-2">
+      <h2 class="font-semibold text-base">Preparing zip&hellip;</h2>
+      <button id="zip-close" class="text-slate-400 dark:text-ink-dim hover:text-slate-600 dark:hover:text-ink-fg text-2xl leading-none">&times;</button>
+    </div>
+    <div id="zip-label" class="text-xs text-slate-500 dark:text-ink-dim font-mono truncate mb-3"></div>
+    <div class="w-full bg-slate-200 dark:bg-ink-active rounded-full h-3 overflow-hidden">
+      <div id="zip-bar" class="bg-blue-600 h-full rounded-full transition-all duration-300" style="width:0%"></div>
+    </div>
+    <div class="mt-2 flex items-center justify-between text-xs text-slate-500 dark:text-ink-dim">
+      <span id="zip-stats"></span>
+      <span id="zip-pct">0%</span>
+    </div>
+    <div class="mt-4 text-right">
+      <button id="zip-cancel" class="px-3 py-1.5 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="ctx-menu" class="dropdown fixed z-50 bg-white dark:bg-ink-side border border-slate-200 dark:border-ink-border rounded shadow-lg py-1 text-sm min-w-[10rem]"></div>
+
+<div id="toast"
+     class="fixed bottom-5 right-5 bg-slate-800 dark:bg-ink-side text-white px-4 py-2 rounded shadow-lg opacity-0 transition-opacity z-50"></div>
+
+<div id="hover-tip"
+     class="hidden fixed z-50 pointer-events-none bg-slate-900 dark:bg-ink-bg text-white text-xs rounded px-3 py-2 shadow-xl max-w-xs leading-relaxed"></div>
+
+<script>
+const state = { path: "", sort: "name", file: null, dirty: false, mode: "view", previewMode: false, sheetIdx: 0, bookmarks: [],
+                wrap: localStorage.getItem("editor-wrap") === "1" };
+const IMAGE_EXTS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".avif"];
+const VIDEO_EXTS = [".mp4", ".webm", ".ogv", ".mov", ".m4v"];
+const AUDIO_EXTS = [".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac"];
+const MERMAID_EXTS = [".mmd", ".mermaid"];
+const PREVIEW_EXTS = [".md", ".markdown", ".html", ".htm", ".csv", ".tsv", ".json", ".svg", ...MERMAID_EXTS];
+const $ = id => document.getElementById(id);
+
+if (window.mermaid) mermaid.initialize({ startOnLoad: false });
+let _mermaidSeq = 0;
+// Render Mermaid source into #mermaid-view (async — mermaid.render returns a promise).
+async function renderMermaid(code) {
+  const view = $("mermaid-view");
+  view.innerHTML = '<div class="text-slate-400 dark:text-ink-dim text-xs">Rendering diagram…</div>';
+  if (!window.mermaid) { view.innerHTML = '<div class="text-amber-700 dark:text-amber-400 text-xs">Mermaid library failed to load.</div>'; return; }
+  try {
+    const { svg } = await mermaid.render("mmd-" + (++_mermaidSeq), code || "");
+    view.innerHTML = svg;
+  } catch (e) {
+    view.innerHTML = `<pre class="whitespace-pre-wrap text-red-700 dark:text-red-400 text-xs">${escapeHtml(String(e && e.message || e))}</pre>`;
+  }
+}
+
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.replace("opacity-0", "opacity-100");
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.classList.replace("opacity-100", "opacity-0"), 1800);
+}
+
+async function api(url, opts = {}) {
+  const res = await fetch(url, opts);
+  if (!res.ok) throw new Error((await res.text()) || res.statusText);
+  return res.json();
+}
+
+const fmtDate = iso => iso ? new Date(iso).toLocaleString() : "";
+
+function fmtSize(b) {
+  if (b == null) return "";
+  if (b < 1024) return b + " B";
+  const units = ["KB", "MB", "GB", "TB"];
+  let n = b, i = -1;
+  do { n /= 1024; i++; } while (n >= 1024 && i < units.length - 1);
+  return n.toFixed(1) + " " + units[i];
+}
+
+// Minimal RFC-4180-ish CSV/TSV parser (handles quoted fields and embedded newlines).
+function parseDelimited(text, delim) {
+  const rows = [];
+  let row = [], field = "", inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += c;
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === delim) {
+      row.push(field); field = "";
+    } else if (c === "\n") {
+      row.push(field); rows.push(row); row = []; field = "";
+    } else if (c !== "\r") {
+      field += c;
+    }
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => !(r.length === 1 && r[0] === ""));
+}
+
+// Build an HTML table from rows (array of string arrays); first row is the header.
+function tableHtml(rows) {
+  if (!rows.length) return '<div class="text-slate-400 dark:text-ink-dim">Empty</div>';
+  const cols = Math.max(...rows.map(r => r.length));
+  const header = rows[0];
+  let html = '<table class="border-collapse text-xs w-max"><thead><tr>';
+  for (let i = 0; i < cols; i++)
+    html += `<th class="border border-slate-300 dark:border-ink-border bg-slate-100 dark:bg-ink-hover px-2 py-1 text-left font-semibold sticky top-0">${escapeHtml(header[i] ?? "")}</th>`;
+  html += "</tr></thead><tbody>";
+  for (let r = 1; r < rows.length; r++) {
+    html += "<tr>";
+    for (let i = 0; i < cols; i++)
+      html += `<td class="border border-slate-200 dark:border-ink-border px-2 py-1" title="${escapeHtml(rows[r][i] ?? "")}">${escapeHtml(rows[r][i] ?? "")}</td>`;
+    html += "</tr>";
+  }
+  return html + "</tbody></table>";
+}
+
+function renderCsvTable(text, delim) {
+  const rows = parseDelimited(text, delim);
+  if (!rows.length) return '<div class="text-slate-400 dark:text-ink-dim">Empty file</div>';
+  const MAX = 2000;
+  let html = tableHtml(rows.slice(0, MAX));
+  if (rows.length > MAX)
+    html += `<div class="text-xs text-amber-700 dark:text-amber-400 mt-2">Showing first ${MAX} of ${rows.length} rows.</div>`;
+  return html;
+}
+
+// Pretty-print + syntax-highlight JSON. Falls back to raw text on parse error.
+function jsonHtml(text) {
+  let pretty;
+  try {
+    pretty = JSON.stringify(JSON.parse(text), null, 2);
+  } catch (e) {
+    return `<div class="text-amber-700 dark:text-amber-400 text-xs mb-2">Invalid JSON: ${escapeHtml(e.message)}</div>`
+      + `<pre class="whitespace-pre-wrap font-mono text-[13px]">${escapeHtml(text)}</pre>`;
+  }
+  // Escape &<> only (not quotes) so the string/key regex below still matches.
+  const esc = pretty.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const hl = esc.replace(
+    /("(\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+    m => {
+      let cls = "text-blue-700 dark:text-blue-400";                              // number
+      if (/^"/.test(m)) cls = /:$/.test(m) ? "text-slate-900 dark:text-ink-fg font-semibold" : "text-green-700 dark:text-green-400";
+      else if (/true|false/.test(m)) cls = "text-purple-700 dark:text-purple-400";
+      else if (/null/.test(m)) cls = "text-slate-400 dark:text-ink-dim";
+      return `<span class="${cls}">${m}</span>`;
+    }
+  );
+  return `<pre class="whitespace-pre font-mono text-[13px] leading-relaxed">${hl}</pre>`;
+}
+
+// Render the current xlsx workbook into #csv-view with a tab per worksheet.
+function renderSheetView() {
+  const sheets = state.file.office.sheets;
+  const idx = state.sheetIdx || 0;
+  let tabs = "";
+  if (sheets.length > 1) {
+    tabs = '<div class="flex gap-1 mb-2 flex-wrap sticky left-0">' + sheets.map((s, i) =>
+      `<button data-i="${i}" class="sheet-tab px-2 py-0.5 rounded text-xs border ${i === idx
+        ? "bg-blue-600 text-white border-blue-600"
+        : "border-slate-300 dark:border-ink-border hover:bg-slate-100 dark:hover:bg-ink-hover"}">${escapeHtml(s.name)}</button>`).join("") + "</div>";
+  }
+  const s = sheets[idx];
+  const note = s.truncated
+    ? `<div class="text-xs text-amber-700 dark:text-amber-400 mt-2">Showing first ${s.rows.length} rows (truncated).</div>` : "";
+  const view = $("csv-view");
+  view.innerHTML = tabs + tableHtml(s.rows) + note;
+  view.querySelectorAll(".sheet-tab").forEach(b =>
+    b.onclick = () => { state.sheetIdx = +b.dataset.i; renderSheetView(); });
+}
+
+function iconFor(entry) {
+  if (entry.is_dir) return "&#128193;";
+  const ext = (entry.name.split(".").pop() || "").toLowerCase();
+  if (["md","markdown","txt","rst","log"].includes(ext)) return "&#128462;";
+  if (["html","htm"].includes(ext)) return "&#127760;";
+  if (["js","ts","jsx","tsx","py","go","rs","java","c","cpp","rb","sh"].includes(ext)) return "&#128221;";
+  if (["mmd","mermaid"].includes(ext)) return "&#128200;";
+  if (["json","yaml","yml","toml","xml","ini"].includes(ext)) return "&#9881;";
+  if (["png","jpg","jpeg","gif","svg","webp","bmp"].includes(ext)) return "&#128247;";
+  if (["mp4","webm","ogv","mov","m4v"].includes(ext)) return "&#127909;";
+  if (["mp3","wav","ogg","m4a","flac","aac"].includes(ext)) return "&#127925;";
+  if (["pdf"].includes(ext)) return "&#128196;";
+  if (["docx","doc","odt"].includes(ext)) return "&#128209;";
+  if (["pptx","ppt","odp"].includes(ext)) return "&#128253;";
+  if (["xlsx","xls","csv","ods"].includes(ext)) return "&#128202;";
+  if (["zip","tar","gz","7z","rar"].includes(ext)) return "&#128230;";
+  return "&#128196;";
+}
+
+const escapeHtml = s => s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+// --- URL sync: keep ?path= in the address bar matching what's displayed ---
+let _suppressUrlSync = false;  // true while restoring state from a popstate event
+function syncUrl(path) {
+  if (_suppressUrlSync) return;
+  const url = path ? `/?path=${encodeURIComponent(path)}` : "/";
+  if (location.pathname + location.search !== url) history.pushState({ path }, "", url);
+}
+
+async function loadTree(path = "", sort = state.sort) {
+  state.path = path;
+  state.sort = sort;
+  const data = await api(`/api/tree?path=${encodeURIComponent(path)}&sort=${sort}`);
+  syncUrl(data.path);
+  renderBreadcrumb(data.path);
+  renderTree(data.entries);
+  updateBookmarkStar();
+}
+
+function renderBreadcrumb(path) {
+  const parts = path ? path.split("/") : [];
+  const bc = $("breadcrumb");
+  bc.innerHTML = "";
+  const mk = (label, target) => {
+    const s = document.createElement("span");
+    s.textContent = label;
+    s.className = "text-blue-600 dark:text-blue-400 hover:underline cursor-pointer";
+    s.onclick = () => loadTree(target);
+    return s;
+  };
+  bc.appendChild(mk("projects", ""));
+  let acc = "";
+  for (const p of parts) {
+    if (!p) continue;
+    acc = acc ? acc + "/" + p : p;
+    bc.appendChild(document.createTextNode(" / "));
+    bc.appendChild(mk(p, acc));
+  }
+}
+
+function renderTree(entries) {
+  const tree = $("tree");
+  tree.innerHTML = "";
+  if (state.path) {
+    const up = document.createElement("div");
+    up.className = "px-3 py-1.5 cursor-pointer hover:bg-blue-50 dark:hover:bg-ink-hover flex items-center gap-2 select-none";
+    up.innerHTML = `<span class="w-5 text-center">&#11168;</span><span class="flex-1">..</span>`;
+    up.onclick = () => loadTree(state.path.split("/").slice(0, -1).join("/"));
+    tree.appendChild(up);
+  }
+  for (const e of entries) {
+    const row = document.createElement("div");
+    row.className = "px-3 py-1.5 cursor-pointer hover:bg-blue-50 dark:hover:bg-ink-hover flex items-center gap-2 select-none";
+    row.dataset.path = e.path;
+    row.innerHTML = `
+      <span class="w-5 text-center">${iconFor(e)}</span>
+      <span class="flex-1 truncate">${escapeHtml(e.name)}</span>
+      <span class="text-[11px] text-slate-500 dark:text-ink-dim">${fmtDate(e.modified).split(",")[0]}</span>`;
+    row.onclick = () => e.is_dir ? loadTree(e.path) : openFile(e.path, row);
+    row.oncontextmenu = (ev) => { ev.preventDefault(); $("hover-tip").classList.add("hidden"); showContextMenu(ev.clientX, ev.clientY, e); };
+    attachTooltip(row, e);
+    tree.appendChild(row);
+  }
+}
+
+function attachTooltip(row, e) {
+  const tip = $("hover-tip");
+  row.addEventListener("mouseenter", () => {
+    tip.innerHTML = `
+      <div class="font-semibold break-all">${escapeHtml(e.name)}</div>
+      <div class="text-slate-300 font-mono break-all">${escapeHtml(e.path || e.name)}</div>
+      <div class="text-slate-400 dark:text-ink-dim mt-0.5">${e.is_dir ? "Folder" : fmtSize(e.size)} · ${fmtDate(e.modified)}</div>`;
+    tip.classList.remove("hidden");
+  });
+  row.addEventListener("mousemove", ev => {
+    const pad = 14;
+    let x = ev.clientX + pad, y = ev.clientY + pad;
+    const r = tip.getBoundingClientRect();
+    if (x + r.width > window.innerWidth) x = ev.clientX - r.width - pad;
+    if (y + r.height > window.innerHeight) y = ev.clientY - r.height - pad;
+    tip.style.left = x + "px";
+    tip.style.top = y + "px";
+  });
+  row.addEventListener("mouseleave", () => tip.classList.add("hidden"));
+}
+
+async function openFile(path, rowEl) {
+  if (state.dirty && !confirm("Discard unsaved changes?")) return;
+  document.querySelectorAll("#tree [data-path]").forEach(el => el.classList.remove("bg-blue-100", "dark:bg-ink-active"));
+  if (rowEl) rowEl.classList.add("bg-blue-100", "dark:bg-ink-active");
+
+  $("placeholder").classList.add("hidden");
+  $("editor-wrap").classList.add("hidden");
+  $("editor-wrap").classList.remove("flex");
+  $("right-toolbar").classList.add("hidden");
+  $("right-toolbar").classList.remove("flex");
+  $("loader-text").textContent = `Loading ${path.split("/").pop()}...`;
+  $("loader").classList.remove("hidden");
+  $("loader").classList.add("flex");
+
+  try {
+    const data = await api(`/api/file?path=${encodeURIComponent(path)}`);
+    state.file = data;
+    state.dirty = false;
+    state.mode = "view";
+    const previewable = PREVIEW_EXTS.includes(data.ext);
+    state.previewMode = (previewable && data.is_text) || data.ext === ".pdf"
+      || IMAGE_EXTS.includes(data.ext) || VIDEO_EXTS.includes(data.ext)
+      || AUDIO_EXTS.includes(data.ext) || !!data.office;
+    state.sheetIdx = 0;
+    syncUrl(data.path);
+    renderFile();
+  } catch (e) {
+    toast("Error: " + e.message);
+    $("placeholder").classList.remove("hidden");
+  } finally {
+    $("loader").classList.add("hidden");
+    $("loader").classList.remove("flex");
+  }
+}
+
+function renderFile() {
+  const f = state.file;
+  $("placeholder").classList.add("hidden");
+  $("right-toolbar").classList.remove("hidden");
+  $("right-toolbar").classList.add("flex");
+  $("editor-wrap").classList.remove("hidden");
+  $("editor-wrap").classList.add("flex");
+
+  const binaryBadge = f.is_text ? "" : '<span class="ml-2 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 px-1.5 py-0.5 rounded text-[11px]">binary</span>';
+  $("file-info").innerHTML = `<strong>${escapeHtml(f.name)}</strong> · ${f.size} bytes · ${escapeHtml(f.mime)}${binaryBadge}`;
+
+  const editor = $("editor");
+  const isPdf = f.ext === ".pdf";
+  const isImg = IMAGE_EXTS.includes(f.ext);
+  const isVideo = VIDEO_EXTS.includes(f.ext);
+  const isAudio = AUDIO_EXTS.includes(f.ext);
+  const isCsv = f.ext === ".csv" || f.ext === ".tsv";
+  const isJson = f.ext === ".json";
+  const isSheet = f.office && f.office.type === "sheet";
+  const isDoc = f.office && f.office.type === "doc";
+  const isPptx = f.office && f.office.type === "pptx";
+  const isMermaid = MERMAID_EXTS.includes(f.ext);
+  const isSvg = f.ext === ".svg";
+  const textPreviewable = PREVIEW_EXTS.includes(f.ext);
+
+  $("btn-edit").classList.toggle("hidden", !f.is_text);
+  $("btn-save").classList.add("hidden");
+  $("btn-copy").classList.toggle("hidden", !f.is_text);
+  $("btn-wrap").classList.toggle("hidden", !f.is_text);
+  applyWrap();
+  $("btn-download").classList.remove("hidden");
+  $("btn-rename").classList.remove("hidden");
+  $("btn-copy-to").classList.remove("hidden");
+  $("btn-move-to").classList.remove("hidden");
+  $("btn-delete").classList.remove("hidden");
+  $("btn-permlink").classList.toggle("hidden", ![".html", ".htm", ".md", ".markdown"].includes(f.ext));
+  // Only text previewables (md/html/csv) have a Code/Preview toggle.
+  $("btn-toggle-preview").classList.toggle("hidden", !(textPreviewable && f.is_text));
+  $("btn-edit").textContent = "Edit";
+
+  editor.value = f.is_text ? (f.content || "")
+    : (isImg || isPdf || isVideo || isAudio || f.office) ? "" : "(Binary file — use Download)";
+  editor.readOnly = true;
+
+  if (f.office_error) {
+    editor.value = `(Could not render this file: ${f.office_error})`;
+    showPanel("code");
+  } else if (isImg) {
+    showPanel("img");
+  } else if (isPdf) {
+    showPanel("pdf");
+  } else if (isVideo) {
+    showPanel("video");
+  } else if (isAudio) {
+    showPanel("audio");
+  } else if (isSheet) {
+    showPanel("sheet");
+  } else if (isDoc) {
+    showPanel("doc");
+  } else if (isPptx) {
+    showPanel("pptx");
+  } else if (state.previewMode && textPreviewable && f.is_text) {
+    $("btn-toggle-preview").textContent = "Code";
+    showPanel(isCsv ? "csv" : isJson ? "json" : isMermaid ? "mermaid" : isSvg ? "img" : (f.ext === ".md" || f.ext === ".markdown") ? "md" : "html");
+  } else {
+    $("btn-toggle-preview").textContent = "Preview";
+    showPanel("code");
+  }
+}
+
+// Show exactly one panel in the right pane and populate it from the current file/editor.
+function showPanel(which) {
+  const f = state.file;
+  const ids = {
+    code: "editor", md: "preview", html: "preview-iframe", csv: "csv-view",
+    json: "json-view", pdf: "pdf-view", img: "img-view", sheet: "csv-view", doc: "preview",
+    pptx: "preview", mermaid: "mermaid-view", video: "video-view", audio: "audio-view",
+  };
+  for (const id of new Set(Object.values(ids))) $(id).classList.add("hidden");
+  if (which !== "pdf") $("pdf-view").removeAttribute("src");
+  if (which !== "img") $("img-view").innerHTML = "";  // release the image
+  // Stop and release media when switching away so playback stops and the connection closes.
+  if (which !== "video") { const v = $("video-view").querySelector("video"); v.pause(); v.removeAttribute("src"); v.load(); }
+  if (which !== "audio") { const a = $("audio-view").querySelector("audio"); a.pause(); a.removeAttribute("src"); a.load(); }
+
+  if (which === "md") {
+    $("preview").innerHTML = `<div class="markdown-body">${marked.parse($("editor").value || "")}</div>`;
+  } else if (which === "html") {
+    $("preview-iframe").srcdoc = $("editor").value || "";
+  } else if (which === "csv") {
+    $("csv-view").innerHTML = renderCsvTable($("editor").value || "", f.ext === ".tsv" ? "\t" : ",");
+  } else if (which === "json") {
+    $("json-view").innerHTML = jsonHtml($("editor").value || "");
+  } else if (which === "pdf") {
+    $("pdf-view").src = `/api/raw?path=${encodeURIComponent(f.path)}`;
+  } else if (which === "img") {
+    $("img-view").innerHTML =
+      `<img src="/api/raw?path=${encodeURIComponent(f.path)}" alt="${escapeHtml(f.name)}" class="max-w-full max-h-full object-contain">`;
+  } else if (which === "video") {
+    $("video-view").querySelector("video").src = `/api/raw?path=${encodeURIComponent(f.path)}`;
+  } else if (which === "audio") {
+    $("audio-view").querySelector("audio").src = `/api/raw?path=${encodeURIComponent(f.path)}`;
+  } else if (which === "mermaid") {
+    renderMermaid($("editor").value || "");
+  } else if (which === "sheet") {
+    renderSheetView();
+  } else if (which === "doc") {
+    $("preview").innerHTML = f.office.html
+      ? `<div class="docx-bg"><div class="docx-page">${f.office.html}</div></div>`
+      : '<div class="text-slate-400 dark:text-ink-dim">Empty document</div>';
+  } else if (which === "pptx") {
+    $("preview").innerHTML = f.office.html
+      ? `<div class="pptx-bg">${f.office.html}</div>`
+      : '<div class="text-slate-400 dark:text-ink-dim">Empty presentation</div>';
+  }
+  $(ids[which]).classList.remove("hidden");
+}
+
+function setEditMode(on) {
+  state.mode = on ? "edit" : "view";
+  const editor = $("editor");
+  editor.readOnly = !on;
+  $("btn-save").classList.toggle("hidden", !on);
+  $("btn-edit").textContent = on ? "Cancel" : "Edit";
+  if (on) {
+    // The textarea is hidden whenever a preview panel is showing, so editing
+    // would focus an invisible element. Force the code panel visible first.
+    if (state.previewMode) {
+      state.previewMode = false;
+      $("btn-toggle-preview").textContent = "Preview";
+    }
+    showPanel("code");
+    editor.focus();
+  } else {
+    editor.value = state.file.content || "";
+    state.dirty = false;
+  }
+}
+
+function togglePreview() {
+  state.previewMode = !state.previewMode;
+  const f = state.file;
+  if (!state.previewMode) {
+    $("btn-toggle-preview").textContent = "Preview";
+    showPanel("code");
+    return;
+  }
+  $("btn-toggle-preview").textContent = "Code";
+  const isCsv = f.ext === ".csv" || f.ext === ".tsv";
+  const isJson = f.ext === ".json";
+  const isMermaid = MERMAID_EXTS.includes(f.ext);
+  const isSvg = f.ext === ".svg";
+  showPanel(isCsv ? "csv" : isJson ? "json" : isMermaid ? "mermaid" : isSvg ? "img" : (f.ext === ".md" || f.ext === ".markdown") ? "md" : "html");
+}
+
+async function saveFile() {
+  const content = $("editor").value;
+  await api("/api/file", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: state.file.path, content }),
+  });
+  state.file.content = content;
+  state.dirty = false;
+  setEditMode(false);
+  toast("Saved");
+}
+
+// Reflect state.wrap on the editor textarea and the Wrap toggle button.
+function applyWrap() {
+  const on = state.wrap;
+  $("editor").classList.toggle("wrap", on);
+  const b = $("btn-wrap");
+  b.classList.toggle("bg-blue-600", on);
+  b.classList.toggle("border-blue-600", on);
+  b.classList.toggle("text-white", on);
+  b.classList.toggle("hover:bg-blue-700", on);
+  b.classList.toggle("hover:bg-slate-100", !on);
+}
+
+function toggleWrap() {
+  state.wrap = !state.wrap;
+  localStorage.setItem("editor-wrap", state.wrap ? "1" : "0");
+  applyWrap();
+}
+
+async function copyToClipboard() {
+  try { await navigator.clipboard.writeText($("editor").value); toast("Copied to clipboard"); }
+  catch { toast("Copy failed"); }
+}
+
+function downloadFile() {
+  if (!state.file) return;
+  window.location.href = `/api/download?path=${encodeURIComponent(state.file.path)}`;
+}
+
+// --- Download current folder as zip (with progress) -----------------------
+const zip = { job: null, timer: null };
+
+function closeZipModal() {
+  clearInterval(zip.timer);
+  zip.timer = null;
+  zip.job = null;
+  $("zip-modal").classList.add("hidden");
+}
+
+async function cancelZip() {
+  const job = zip.job;
+  closeZipModal();
+  if (job) {
+    try { await api(`/api/zip?job=${job}`, { method: "DELETE" }); } catch {}
+    toast("Zip cancelled");
+  }
+}
+
+function setZipProgress(s) {
+  const pct = s.bytes_total ? Math.round(100 * s.bytes_done / s.bytes_total)
+            : s.total ? Math.round(100 * s.done / s.total) : 100;
+  $("zip-bar").style.width = pct + "%";
+  $("zip-pct").textContent = pct + "%";
+  $("zip-stats").textContent = `${s.done} / ${s.total} files · ${fmtSize(s.bytes_done)} of ${fmtSize(s.bytes_total)}`;
+}
+
+async function pollZip() {
+  if (!zip.job) return;
+  try {
+    const s = await api(`/api/zip/status?job=${zip.job}`);
+    setZipProgress(s);
+    if (s.status === "done") {
+      const job = zip.job;
+      closeZipModal();
+      window.location.href = `/api/zip/download?job=${job}`;
+      toast("Downloading " + s.name);
+    } else if (s.status === "error") {
+      closeZipModal();
+      toast("Zip failed: " + s.error);
+    } else if (s.status === "cancelled") {
+      closeZipModal();
+    }
+  } catch (e) {
+    closeZipModal();
+    toast("Error: " + e.message);
+  }
+}
+
+async function downloadFolderZip() {
+  try {
+    const data = await api("/api/zip", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: state.path }),
+    });
+    zip.job = data.job;
+    $("zip-label").textContent = "projects" + (state.path ? "/" + state.path : "");
+    setZipProgress({ done: 0, total: data.total, bytes_done: 0, bytes_total: data.bytes_total });
+    $("zip-modal").classList.remove("hidden");
+    zip.timer = setInterval(pollZip, 400);
+  } catch (e) { toast("Error: " + e.message); }
+}
+
+function openRename() {
+  if (!state.file) return;
+  const input = $("rename-input");
+  input.value = state.file.name;
+  $("rename-modal").classList.remove("hidden");
+  input.focus();
+  // Select the base name only, leaving the extension easy to keep.
+  const dot = state.file.name.lastIndexOf(".");
+  input.setSelectionRange(0, dot > 0 ? dot : state.file.name.length);
+}
+
+function closeRename() { $("rename-modal").classList.add("hidden"); }
+
+async function saveRename() {
+  if (!state.file) return;
+  const newName = $("rename-input").value.trim();
+  if (!newName || newName === state.file.name) { closeRename(); return; }
+  try {
+    const data = await api("/api/rename", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: state.file.path, name: newName }),
+    });
+    closeRename();
+    await loadTree(state.path);
+    await openFile(data.path);
+    toast("Renamed to " + data.name);
+  } catch (e) { toast("Error: " + e.message); }
+}
+
+const permlinkUrl = path => `${location.origin}/view?path=${encodeURIComponent(path)}`;
+
+async function openPermlink() {
+  if (!state.file) return;
+  try {
+    await api("/api/permlinks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: state.file.path }),
+    });
+    const url = permlinkUrl(state.file.path);
+    $("permlink-url").value = url;
+    $("permlink-open").href = url;
+    $("permlink-modal").classList.remove("hidden");
+    $("permlink-url").select();
+    loadPermlinks();
+  } catch (e) { toast("Error: " + e.message); }
+}
+
+async function loadPermlinks() {
+  try {
+    const data = await api("/api/permlinks");
+    const menu = $("permlink-menu");
+    $("permlink-count").textContent = data.permlinks.length;
+    menu.innerHTML = "";
+    if (!data.permlinks.length) {
+      menu.innerHTML = '<div class="px-3 py-2 text-slate-400 dark:text-ink-dim text-xs">No perm links yet</div>';
+      return;
+    }
+    for (const l of data.permlinks) {
+      const item = document.createElement("div");
+      item.className = "px-3 py-2 hover:bg-blue-50 dark:hover:bg-ink-hover border-b border-slate-100 dark:border-ink-border last:border-0 flex items-center gap-2";
+      item.innerHTML = `
+        <span class="link flex-1 min-w-0 cursor-pointer">
+          <span class="block font-medium truncate">${escapeHtml(l.name)}</span>
+          <span class="block text-xs text-slate-500 dark:text-ink-dim font-mono truncate">${escapeHtml(l.path)}</span>
+        </span>
+        <button class="del text-slate-400 dark:text-ink-dim hover:text-red-600 dark:hover:text-red-400 text-lg leading-none" title="Remove">&times;</button>`;
+      item.querySelector(".link").onclick = () => window.open(permlinkUrl(l.path), "_blank", "noopener");
+      item.querySelector(".del").onclick = async (e) => {
+        e.stopPropagation();
+        try { await api(`/api/permlinks?path=${encodeURIComponent(l.path)}`, { method: "DELETE" }); loadPermlinks(); }
+        catch (err) { toast("Error: " + err.message); }
+      };
+      menu.appendChild(item);
+    }
+  } catch {}
+}
+
+// --- Folder bookmarks ---------------------------------------------------
+function updateBookmarkStar() {
+  const btn = $("btn-bookmark-folder");
+  const marked = state.bookmarks.some(b => b.path === state.path);
+  btn.innerHTML = marked ? "&#9733;" : "&#9734;";  // filled vs outline star
+  btn.classList.toggle("text-yellow-500", marked);
+  btn.classList.toggle("text-slate-300", !marked);
+  btn.title = marked ? "Remove this folder from bookmarks" : "Bookmark this folder";
+}
+
+async function loadBookmarks() {
+  try {
+    const data = await api("/api/bookmarks");
+    state.bookmarks = data.bookmarks;
+    const menu = $("bookmark-menu");
+    $("bookmark-count").textContent = data.bookmarks.length;
+    menu.innerHTML = "";
+    if (!data.bookmarks.length) {
+      menu.innerHTML = '<div class="px-3 py-2 text-slate-400 dark:text-ink-dim text-xs">No bookmarked folders yet</div>';
+    } else {
+      for (const b of data.bookmarks) {
+        const item = document.createElement("div");
+        item.className = "px-3 py-2 hover:bg-blue-50 dark:hover:bg-ink-hover border-b border-slate-100 dark:border-ink-border last:border-0 flex items-center gap-2";
+        item.innerHTML = `
+          <span class="link flex-1 min-w-0 cursor-pointer">
+            <span class="block font-medium truncate">&#128193; ${escapeHtml(b.name)}</span>
+            <span class="block text-xs text-slate-500 dark:text-ink-dim font-mono truncate">${escapeHtml(b.path || "projects")}</span>
+          </span>
+          <button class="del text-slate-400 dark:text-ink-dim hover:text-red-600 dark:hover:text-red-400 text-lg leading-none" title="Remove">&times;</button>`;
+        item.querySelector(".link").onclick = () => {
+          $("bookmark-menu").classList.remove("show");
+          loadTree(b.path);
+        };
+        item.querySelector(".del").onclick = async (e) => {
+          e.stopPropagation();
+          try { await api(`/api/bookmarks?path=${encodeURIComponent(b.path)}`, { method: "DELETE" }); loadBookmarks(); }
+          catch (err) { toast("Error: " + err.message); }
+        };
+        menu.appendChild(item);
+      }
+    }
+    updateBookmarkStar();
+  } catch {}
+}
+
+async function toggleBookmarkFolder() {
+  const isMarked = state.bookmarks.some(b => b.path === state.path);
+  try {
+    if (isMarked) {
+      await api(`/api/bookmarks?path=${encodeURIComponent(state.path)}`, { method: "DELETE" });
+      toast("Bookmark removed");
+    } else {
+      await api("/api/bookmarks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: state.path }),
+      });
+      toast("Folder bookmarked");
+    }
+    await loadBookmarks();
+  } catch (e) { toast("Error: " + e.message); }
+}
+
+async function newItem(isDir) {
+  const name = prompt(isDir ? "New folder name:" : "New file name:");
+  if (!name) return;
+  const path = state.path ? `${state.path}/${name}` : name;
+  try {
+    await api("/api/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, is_dir: isDir }),
+    });
+    await loadTree(state.path);
+    toast(isDir ? "Folder created" : "File created");
+  } catch (e) { toast("Error: " + e.message); }
+}
+
+// --- Delete --------------------------------------------------------------
+async function deleteEntry(path, name, isDir) {
+  const what = isDir ? "folder" : "file";
+  const extra = isDir ? "\n\nThis will delete the folder and everything inside it." : "";
+  if (!confirm(`Delete ${what} "${name}"?${extra}`)) return;
+  try {
+    await api(`/api/delete?path=${encodeURIComponent(path)}`, { method: "DELETE" });
+    // If the deleted file is the one open in the viewer, clear the right pane.
+    if (state.file && (state.file.path === path || state.file.path.startsWith(path + "/"))) {
+      state.file = null;
+      state.dirty = false;
+      $("editor-wrap").classList.add("hidden");
+      $("editor-wrap").classList.remove("flex");
+      $("right-toolbar").classList.add("hidden");
+      $("right-toolbar").classList.remove("flex");
+      $("placeholder").classList.remove("hidden");
+    }
+    await loadTree(state.path);
+    loadPermlinks();
+    loadBookmarks();
+    toast(`Deleted ${name}`);
+  } catch (e) { toast("Error: " + e.message); }
+}
+
+// --- Copy / Move (destination folder picker) -----------------------------
+const transfer = { mode: "copy", src: "", srcName: "", isDir: false, dir: "" };
+
+function openTransfer(mode, src, srcName, isDir) {
+  Object.assign(transfer, { mode, src, srcName, isDir });
+  $("transfer-title").textContent = (mode === "move" ? "Move to" : "Copy to") + "…";
+  $("transfer-confirm").textContent = mode === "move" ? "Move here" : "Copy here";
+  $("transfer-subject").textContent = (isDir ? "📁 " : "") + srcName;
+  // Start browsing from the source's own parent folder.
+  const parent = src.includes("/") ? src.split("/").slice(0, -1).join("/") : "";
+  $("transfer-modal").classList.remove("hidden");
+  transferBrowse(parent);
+}
+
+function closeTransfer() { $("transfer-modal").classList.add("hidden"); }
+
+async function transferBrowse(dir) {
+  transfer.dir = dir;
+  let data;
+  try { data = await api(`/api/tree?path=${encodeURIComponent(dir)}`); }
+  catch (e) { toast("Error: " + e.message); return; }
+  dir = data.path;
+  transfer.dir = dir;
+
+  // Breadcrumb
+  const bc = $("transfer-breadcrumb");
+  bc.innerHTML = "";
+  const crumb = (label, target) => {
+    const s = document.createElement("span");
+    s.textContent = label;
+    s.className = "text-blue-600 dark:text-blue-400 hover:underline cursor-pointer";
+    s.onclick = () => transferBrowse(target);
+    return s;
+  };
+  bc.appendChild(crumb("projects", ""));
+  let acc = "";
+  for (const part of dir ? dir.split("/") : []) {
+    acc = acc ? acc + "/" + part : part;
+    bc.appendChild(document.createTextNode(" / "));
+    bc.appendChild(crumb(part, acc));
+  }
+
+  // Folder list (directories only)
+  const list = $("transfer-list");
+  list.innerHTML = "";
+  if (dir) {
+    const up = document.createElement("div");
+    up.className = "px-3 py-1.5 cursor-pointer hover:bg-blue-50 dark:hover:bg-ink-hover flex items-center gap-2 select-none";
+    up.innerHTML = `<span class="w-5 text-center">&#11168;</span><span>..</span>`;
+    up.onclick = () => transferBrowse(dir.split("/").slice(0, -1).join("/"));
+    list.appendChild(up);
+  }
+  const folders = data.entries.filter(e => e.is_dir);
+  if (!folders.length && !dir) {
+    // root with no subfolders still lets you drop here
+  } else if (!folders.length) {
+    const empty = document.createElement("div");
+    empty.className = "px-3 py-2 text-slate-400 dark:text-ink-dim text-xs";
+    empty.textContent = "No subfolders";
+    list.appendChild(empty);
+  }
+  for (const e of folders) {
+    const row = document.createElement("div");
+    const isSelf = transfer.isDir && (e.path === transfer.src);
+    row.className = "px-3 py-1.5 flex items-center gap-2 select-none "
+      + (isSelf ? "text-slate-300 cursor-not-allowed" : "cursor-pointer hover:bg-blue-50 dark:hover:bg-ink-hover");
+    row.innerHTML = `<span class="w-5 text-center">&#128193;</span><span class="flex-1 truncate">${escapeHtml(e.name)}</span>`;
+    if (!isSelf) row.onclick = () => transferBrowse(e.path);
+    list.appendChild(row);
+  }
+
+  // Validate the current destination and reflect it on the confirm button.
+  const invalid = transfer.isDir && (dir === transfer.src || dir.startsWith(transfer.src + "/"));
+  const sameParent = dir === (transfer.src.includes("/") ? transfer.src.split("/").slice(0, -1).join("/") : "");
+  const confirmBtn = $("transfer-confirm");
+  const blocked = invalid || sameParent;
+  confirmBtn.disabled = blocked;
+  confirmBtn.classList.toggle("opacity-40", blocked);
+  confirmBtn.classList.toggle("cursor-not-allowed", blocked);
+  $("transfer-dest").textContent = invalid
+    ? "Can't place a folder inside itself"
+    : sameParent
+      ? "Already in this folder"
+      : `Destination: projects${dir ? "/" + dir : ""}`;
+}
+
+async function transferConfirm() {
+  const { mode, src, srcName, dir } = transfer;
+  try {
+    let res = await fetch(`/api/${mode}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: src, dest_dir: dir, overwrite: false }),
+    });
+    if (res.status === 409 && confirm(`"${srcName}" already exists in the destination — overwrite?`)) {
+      res = await fetch(`/api/${mode}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: src, dest_dir: dir, overwrite: true }),
+      });
+    }
+    if (!res.ok) throw new Error(await res.text());
+    closeTransfer();
+    await loadTree(state.path);
+    if (mode === "move") loadPermlinks(), loadBookmarks();
+    toast(`${mode === "move" ? "Moved" : "Copied"} ${srcName}`);
+  } catch (e) { toast("Error: " + e.message); }
+}
+
+// --- Right-click context menu on tree rows -------------------------------
+function showContextMenu(x, y, entry) {
+  const menu = $("ctx-menu");
+  menu.innerHTML = "";
+  const add = (label, danger, fn) => {
+    const item = document.createElement("div");
+    item.className = "px-3 py-1.5 cursor-pointer hover:bg-blue-50 dark:hover:bg-ink-hover "
+      + (danger ? "text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950" : "");
+    item.textContent = label;
+    item.onclick = () => { hideContextMenu(); fn(); };
+    menu.appendChild(item);
+  };
+  add("Copy to…", false, () => openTransfer("copy", entry.path, entry.name, entry.is_dir));
+  add("Move to…", false, () => openTransfer("move", entry.path, entry.name, entry.is_dir));
+  add("Delete", true, () => deleteEntry(entry.path, entry.name, entry.is_dir));
+  menu.classList.add("show");
+  // Keep the menu inside the viewport.
+  const r = menu.getBoundingClientRect();
+  menu.style.left = Math.min(x, window.innerWidth - r.width - 6) + "px";
+  menu.style.top = Math.min(y, window.innerHeight - r.height - 6) + "px";
+}
+function hideContextMenu() { $("ctx-menu").classList.remove("show"); }
+
+function setupAutocomplete(inputId, dropdownId, endpoint, render) {
+  const input = $(inputId), dd = $(dropdownId);
+  let timer;
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (!q) { dd.classList.remove("show"); dd.innerHTML = ""; return; }
+    timer = setTimeout(async () => {
+      try {
+        const data = await api(`${endpoint}?q=${encodeURIComponent(q)}`);
+        dd.innerHTML = "";
+        if (!data.matches.length) {
+          dd.innerHTML = '<div class="px-3 py-2 text-slate-400 dark:text-ink-dim">No matches</div>';
+        } else {
+          for (const m of data.matches) {
+            const item = document.createElement("div");
+            item.className = "px-3 py-2 cursor-pointer hover:bg-blue-50 dark:hover:bg-ink-hover border-b border-slate-100 dark:border-ink-border last:border-0";
+            item.innerHTML = render(m);
+            item.onclick = async () => { dd.classList.remove("show"); input.value = ""; await navigateToFile(m.path); };
+            dd.appendChild(item);
+          }
+        }
+        dd.classList.add("show");
+      } catch {}
+    }, 250);
+  });
+  document.addEventListener("click", e => {
+    if (!input.contains(e.target) && !dd.contains(e.target)) dd.classList.remove("show");
+  });
+}
+
+async function navigateToFile(path) {
+  const parts = path.split("/");
+  const dir = parts.slice(0, -1).join("/");
+  await loadTree(dir);
+  const row = document.querySelector(`#tree [data-path="${CSS.escape(path)}"]`);
+  await openFile(path, row);
+}
+
+$("btn-new-file").onclick = () => newItem(false);
+$("btn-new-folder").onclick = () => newItem(true);
+
+const MAX_UPLOAD = 500 * 1024 * 1024;
+$("btn-upload").onclick = () => $("upload-input").click();
+$("upload-input").onchange = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  if (file.size > MAX_UPLOAD) { toast(`File too large: max 500MB`); return; }
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("target_dir", state.path);
+  try {
+    const res = await fetch("/api/upload", { method: "POST", body: fd });
+    if (!res.ok) {
+      const t = await res.text();
+      if (res.status === 409 && confirm(`"${file.name}" exists — overwrite?`)) {
+        fd.append("overwrite", "true");
+        const res2 = await fetch("/api/upload", { method: "POST", body: fd });
+        if (!res2.ok) throw new Error(await res2.text());
+      } else { throw new Error(t || res.statusText); }
+    }
+    await loadTree(state.path);
+    toast(`Uploaded ${file.name}`);
+  } catch (err) { toast("Upload failed: " + err.message); }
+};
+$("btn-zip-folder").onclick = downloadFolderZip;
+$("zip-close").onclick = cancelZip;
+$("zip-cancel").onclick = cancelZip;
+$("btn-search").onclick = () => {
+  const w = $("filename-search-wrap");
+  w.classList.toggle("hidden");
+  if (!w.classList.contains("hidden")) $("search-filename").focus();
+};
+$("btn-refresh").onclick = async () => {
+  try { await loadTree(state.path); toast("Folder refreshed"); }
+  catch (e) { toast("Error: " + e.message); }
+};
+$("sort-select").onchange = e => loadTree(state.path, e.target.value);
+$("btn-edit").onclick = () => setEditMode(state.mode !== "edit");
+$("btn-save").onclick = saveFile;
+$("btn-copy").onclick = copyToClipboard;
+$("btn-wrap").onclick = toggleWrap;
+$("btn-toggle-preview").onclick = togglePreview;
+$("btn-download").onclick = downloadFile;
+$("btn-rename").onclick = openRename;
+$("btn-copy-to").onclick = () => { if (state.file) openTransfer("copy", state.file.path, state.file.name, false); };
+$("btn-move-to").onclick = () => { if (state.file) openTransfer("move", state.file.path, state.file.name, false); };
+$("btn-delete").onclick = () => { if (state.file) deleteEntry(state.file.path, state.file.name, false); };
+$("btn-permlink").onclick = openPermlink;
+
+$("transfer-close").onclick = closeTransfer;
+$("transfer-cancel").onclick = closeTransfer;
+$("transfer-confirm").onclick = transferConfirm;
+$("transfer-modal").onclick = e => { if (e.target === $("transfer-modal")) closeTransfer(); };
+document.addEventListener("click", e => { if (!$("ctx-menu").contains(e.target)) hideContextMenu(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") { hideContextMenu(); closeTransfer(); } });
+
+$("rename-close").onclick = closeRename;
+$("rename-cancel").onclick = closeRename;
+$("rename-save").onclick = saveRename;
+$("rename-modal").onclick = e => { if (e.target === $("rename-modal")) closeRename(); };
+$("rename-input").addEventListener("keydown", e => {
+  if (e.key === "Enter") { e.preventDefault(); saveRename(); }
+  else if (e.key === "Escape") closeRename();
+});
+$("editor").addEventListener("input", () => { if (state.mode === "edit") state.dirty = true; });
+
+$("permlink-close").onclick = () => $("permlink-modal").classList.add("hidden");
+$("permlink-modal").onclick = e => { if (e.target === $("permlink-modal")) $("permlink-modal").classList.add("hidden"); };
+$("permlink-copy").onclick = async () => {
+  const url = $("permlink-url").value;
+  try { await navigator.clipboard.writeText(url); toast("Link copied"); }
+  catch { $("permlink-url").select(); document.execCommand("copy"); toast("Link copied"); }
+};
+$("permlink-menu-btn").onclick = e => { e.stopPropagation(); $("permlink-menu").classList.toggle("show"); };
+document.addEventListener("click", e => {
+  if (!$("permlink-menu-btn").contains(e.target) && !$("permlink-menu").contains(e.target))
+    $("permlink-menu").classList.remove("show");
+});
+
+$("btn-bookmark-folder").onclick = toggleBookmarkFolder;
+$("bookmark-menu-btn").onclick = e => { e.stopPropagation(); $("bookmark-menu").classList.toggle("show"); };
+document.addEventListener("click", e => {
+  if (!$("bookmark-menu-btn").contains(e.target) && !$("bookmark-menu").contains(e.target))
+    $("bookmark-menu").classList.remove("show");
+});
+
+setupAutocomplete("search-filename", "filename-dropdown", "/api/search/filename",
+  m => `<div class="font-medium">${escapeHtml(m.name)}</div><div class="text-xs text-slate-500 dark:text-ink-dim font-mono">${escapeHtml(m.path)} · ${fmtDate(m.modified)}</div>`);
+setupAutocomplete("search-content", "content-dropdown", "/api/search/content",
+  m => `<div class="text-sm">${escapeHtml(m.snippet)}</div><div class="text-xs text-slate-500 dark:text-ink-dim font-mono">${escapeHtml(m.path)}:${m.line}</div>`);
+
+window.addEventListener("beforeunload", e => { if (state.dirty) { e.preventDefault(); e.returnValue = ""; } });
+
+$("theme-toggle").onclick = () => {
+  const dark = document.documentElement.classList.toggle("dark");
+  localStorage.setItem("filepeek-theme", dark ? "dark" : "light");
+};
+
+// Draggable panel splitter — drag left/right to resize the two panels.
+(function () {
+  const splitter = $("splitter"), left = $("left-panel"), main = splitter.parentElement;
+  const MIN_LEFT = 200, MIN_RIGHT = 320;  // px floors for each side
+  let dragging = false;
+
+  const onMove = e => {
+    if (!dragging) return;
+    const rect = main.getBoundingClientRect();
+    const max = rect.width - splitter.offsetWidth - MIN_RIGHT;
+    const w = Math.max(MIN_LEFT, Math.min(max, e.clientX - rect.left));
+    left.style.width = w + "px";
+  };
+  const stop = () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  };
+
+  splitter.addEventListener("mousedown", e => {
+    dragging = true;
+    left.style.minWidth = "0";  // release the 280px tailwind floor; JS clamp governs now
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    e.preventDefault();
+  });
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("mouseup", stop);
+  // double-click the splitter to reset to the default 30% width
+  splitter.addEventListener("dblclick", () => { left.style.width = ""; left.style.minWidth = ""; });
+})();
+
+// Deep link: /?path=<rel> opens that folder in the tree, or that file in the viewer.
+async function openFromUrl(path) {
+  if (!path) return loadTree("");
+  try { await loadTree(path); }          // folder?
+  catch { await navigateToFile(path); }  // otherwise treat it as a file
+}
+
+window.addEventListener("popstate", async () => {
+  _suppressUrlSync = true;
+  try { await openFromUrl(new URLSearchParams(location.search).get("path") || ""); }
+  catch {} finally { _suppressUrlSync = false; }
+});
+
+openFromUrl(new URLSearchParams(location.search).get("path") || "").catch(() => loadTree());
+loadPermlinks();
+loadBookmarks();
+</script>
+</body>
+</html>

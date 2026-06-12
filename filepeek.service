@@ -1,0 +1,18 @@
+[Unit]
+Description=filepeek file viewer server
+After=network.target
+
+[Service]
+Type=simple
+User=filepeek
+Group=filepeek
+EnvironmentFile=/etc/filepeek/filepeek.env
+WorkingDirectory=/opt/filepeek
+ExecStart=/opt/filepeek/.venv/bin/python /opt/filepeek/app.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

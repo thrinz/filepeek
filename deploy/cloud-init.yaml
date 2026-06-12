@@ -1,0 +1,23 @@
+#cloud-config
+# filepeek — zero-SSH install. Paste this file into the "user data" box when
+# creating a server. After first boot, retrieve your password with:
+#
+#   ssh root@<server-ip> cat /root/filepeek-credentials.txt
+#
+# Where to paste it:
+#   AWS EC2:       Launch instance -> Advanced details -> User data
+#   Google Cloud:  Create instance -> Advanced -> Automation -> use an Ubuntu
+#                  image and add metadata key "user-data" with this content
+#   Azure:         Create VM -> Advanced -> Custom data
+#   DigitalOcean:  Create Droplet -> Advanced Options -> Add Initialization scripts
+#   Linode:        Create Linode -> Add User Data
+#
+# Optional: set FILEPEEK_DOMAIN below to a domain whose DNS already points at
+# this server, and you get a trusted Let's Encrypt certificate automatically.
+# Leave it empty for a self-signed cert (browser warns once).
+
+runcmd:
+  - curl -fsSL https://raw.githubusercontent.com/thrinz/filepeek/main/deploy/install-remote.sh -o /tmp/filepeek-install.sh
+  - FILEPEEK_DOMAIN="" bash /tmp/filepeek-install.sh
+
+final_message: "filepeek installed — credentials are in /root/filepeek-credentials.txt"
