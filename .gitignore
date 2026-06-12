@@ -3,3 +3,12 @@ __pycache__/
 bookmarks.json
 permlinks.json
 nohup.out
+
+# Secrets — never commit credentials or env files
+.env
+*.env
+filepeek.env
+filepeek-credentials.txt
+*credentials*
+*.pem
+*.key
