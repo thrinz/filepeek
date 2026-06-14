@@ -63,7 +63,7 @@
     {
       "@type": "Question",
       "name": "Can filepeek back up my files?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Yes — built in. Back up selected folders or everything to a local/NAS folder or any S3-compatible cloud (AWS, Backblaze B2, Wasabi, Cloudflare R2, MinIO) on a schedule or on demand. Cloud setup is four pasted values — no rclone, no OAuth. Copy mode never deletes; mirror mode is gated behind a preview and a typed confirmation." }
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes — built in. Back up selected folders or everything to a local/NAS folder or any S3-compatible cloud (AWS, Backblaze B2, Wasabi, Cloudflare R2, MinIO) on a schedule or on demand. Cloud setup is four pasted values. Copy mode never deletes; mirror mode is gated behind a preview and a typed confirmation." }
     },
     {
       "@type": "Question",
@@ -117,17 +117,45 @@
   @media (max-width: 700px) { .shots { grid-template-columns: 1fr; } }
   .shots figure { margin: 0; }
   .shots figcaption { color: var(--dim); font-size: .85rem; margin-top: .4rem; text-align: center; }
+
+  .badges { margin: 1rem 0 .25rem; }
+  .badges img { height: 20px; margin: 0 .15rem; vertical-align: middle; }
+
+  .flow { display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+          gap: .5rem; margin: 1.5rem 0; color: var(--dim); font-size: .92rem; }
+  .flow .box { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+               padding: .5rem .9rem; color: var(--fg); font-weight: 600; }
+  .flow .arrow { color: var(--accent); font-weight: 700; }
+
+  table.compare { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .95rem; }
+  table.compare th, table.compare td { padding: .6rem .8rem; border-bottom: 1px solid var(--border); text-align: left; }
+  table.compare thead th { color: var(--dim); font-weight: 600; }
+  table.compare thead th:last-child { color: var(--accent); }
+  table.compare td:first-child { color: var(--dim); }
+  table.compare td:last-child { color: var(--fg); font-weight: 600; }
+
+  .secondary { margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--border); }
+  .secondary h2 { margin-top: 0; }
+  .secondary .eyebrow { text-transform: uppercase; letter-spacing: .08em; font-size: .75rem;
+                        color: var(--accent); font-weight: 700; margin: 0; }
 </style>
 </head>
 <body>
 
 <header class="hero">
   <img src="logo.svg" alt="filepeek logo">
-  <h1>View AI-generated files in your browser</h1>
-  <p class="tagline">filepeek is a free, self-hosted web viewer for the files AI agents produce —
-     Markdown, HTML, Excel, Word, PowerPoint, CSV, code, images, and PDFs — rendered, not raw.</p>
+  <h1>Your AI agent wrote 200 files.<br>Stop reading them in a terminal.</h1>
+  <p class="tagline">filepeek is a free, self-hosted browser that renders the Markdown, Mermaid,
+     Excel, Word, HTML, and code your agents produce — Claude Code, ChatGPT, Cursor, anything —
+     straight from your local filesystem.</p>
   <a class="cta" href="https://github.com/thrinz/filepeek">Get it on GitHub</a>
   <a class="cta alt" href="https://github.com/thrinz/filepeek/blob/main/docs/INSTALL.md">Quick start</a>
+  <p class="badges">
+    <a href="https://github.com/thrinz/filepeek"><img src="https://img.shields.io/github/stars/thrinz/filepeek?style=flat&label=stars" alt="GitHub stars"></a>
+    <a href="https://github.com/thrinz/filepeek/network/members"><img src="https://img.shields.io/github/forks/thrinz/filepeek?style=flat&label=forks" alt="GitHub forks"></a>
+    <a href="https://github.com/thrinz/filepeek/graphs/contributors"><img src="https://img.shields.io/github/contributors/thrinz/filepeek?style=flat&label=contributors" alt="Contributors"></a>
+    <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT licensed">
+  </p>
 </header>
 
 <div class="tour-video">
@@ -144,14 +172,37 @@
      squinting at raw markdown in a terminal. filepeek serves any directory as a browsable web UI
      that renders what agents produce, the way it was meant to look.</p>
 
+  <div class="flow">
+    <span class="box">Claude Code · ChatGPT · Cursor</span>
+    <span class="arrow">→</span>
+    <span class="box">files on your disk</span>
+    <span class="arrow">→</span>
+    <span class="box">filepeek</span>
+    <span class="arrow">→</span>
+    <span class="box">your browser</span>
+  </div>
+
+  <h2>Why not just open them in VS Code?</h2>
+  <p>VS Code shows you source. filepeek shows you the <em>result</em> — the rendered page your agent
+     meant for a human to read.</p>
+  <table class="compare">
+    <thead><tr><th>In your editor</th><th>In filepeek</th></tr></thead>
+    <tbody>
+      <tr><td>Raw Markdown source</td><td>Rendered Markdown</td></tr>
+      <tr><td>Mermaid as text</td><td>Rendered diagrams</td></tr>
+      <tr><td>Excel needs an extension</td><td>Opens directly, sheet by sheet</td></tr>
+      <tr><td>HTML as source</td><td>Interactive, clickable page</td></tr>
+      <tr><td>Hard to share a view</td><td>A URL for every file</td></tr>
+      <tr><td>Tied to your desktop</td><td>Works from any browser, including mobile</td></tr>
+    </tbody>
+  </table>
+
   <h2>What it renders</h2>
   <div class="grid">
     <div class="card"><h3>📝 Markdown + Mermaid</h3><p>AI-written docs, plans, and reports rendered with tables, code blocks, and Mermaid diagrams.</p></div>
     <div class="card"><h3>📊 Excel, Word, PowerPoint</h3><p>View xlsx, docx, and pptx in the browser — no Microsoft Office, no LibreOffice, no upload.</p></div>
     <div class="card"><h3>🌐 HTML pages</h3><p>Agent-built dashboards and mockups served directly, ready to click through.</p></div>
     <div class="card"><h3>💻 Code &amp; data</h3><p>~60 languages, CSV/TSV as sortable tables, images, SVG, and PDFs inline.</p></div>
-    <div class="card"><h3>🗂️ Track boards</h3><p>Open a <code>.nts</code> file as a kanban/table task board — bugs, owners, labels, priorities, checklists — saved back as plain JSON.</p></div>
-    <div class="card"><h3>☁️ Automatic backup</h3><p>Protect chosen folders to a local/NAS path or any S3-compatible cloud (Backblaze B2, Wasabi, R2, S3) on a schedule — no rclone, no OAuth.</p></div>
     <div class="card"><h3>🔍 Search &amp; organize</h3><p>Filename and full-text search, bookmarks, and a bookmarkable URL for every folder and file.</p></div>
     <div class="card"><h3>🔐 Self-hosted &amp; private</h3><p>Your files never leave your machine. Optional HTTPS + password mode for cloud servers and Tailscale.</p></div>
   </div>
@@ -163,8 +214,27 @@
     <figure><img src="img/spreadsheet.png" loading="lazy" alt="Excel workbook rendered as styled tables in the browser"><figcaption>xlsx rendered, sheet by sheet</figcaption></figure>
     <figure><img src="img/html.png" loading="lazy" alt="HTML dashboard served directly inside filepeek"><figcaption>HTML reports open as pages</figcaption></figure>
     <figure><img src="img/search.png" loading="lazy" alt="Full-text search results across file names and contents"><figcaption>Search names and contents</figcaption></figure>
-    <figure><img src="img/tracks.png" loading="lazy" alt="Tracks task board: kanban columns of cards with priorities, owners, labels, checklist progress, and bug counts"><figcaption>Track boards — kanban, table &amp; bugs views, saved as a plain <code>.nts</code> file</figcaption></figure>
   </div>
+
+  <section class="secondary">
+    <p class="eyebrow">Bonus</p>
+    <h2>🗂️ Organize work with built-in task boards</h2>
+    <p>Already pointing filepeek at your project? Any <code>.nts</code> file opens as an interactive
+       task board — kanban, table, and bugs views with owners, labels, priorities, and checklists.
+       The board is plain JSON saved back to the file: versionable, portable, no database.</p>
+    <div class="shots">
+      <figure style="grid-column: 1 / -1"><img src="img/tracks.png" loading="lazy" alt="Tracks task board: kanban columns of cards with priorities, owners, labels, checklist progress, and bug counts"><figcaption>Track boards — kanban, table &amp; bugs views, saved as a plain <code>.nts</code> file</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="secondary">
+    <p class="eyebrow">Bonus</p>
+    <h2>☁️ Protect files with built-in backup</h2>
+    <p>Back up chosen folders (or everything) to a local/NAS path or any S3-compatible cloud —
+       Backblaze B2, Wasabi, Cloudflare R2, AWS — on a schedule or on demand. Cloud setup is four
+       pasted values. Copy mode never deletes; an advanced mirror mode is gated behind a preview and
+       a typed confirmation.</p>
+  </section>
 
   <h2>Quick start</h2>
   <pre><code>git clone https://github.com/thrinz/filepeek &amp;&amp; cd filepeek
@@ -189,7 +259,7 @@ FILEPEEK_ROOT=~/projects .venv/bin/python app.py</code></pre>
   <details><summary>Can filepeek back up my files?</summary>
     <p>Yes — built in. Back up selected folders (or everything) to a local/NAS folder or any
        S3-compatible cloud (AWS, Backblaze B2, Wasabi, Cloudflare R2, MinIO) on a schedule or on
-       demand. Cloud setup is four pasted values — no rclone, no OAuth, no provider console app.
+       demand. Cloud setup is four pasted values — no provider console app.
        Copy mode never deletes; an advanced mirror mode is gated behind a preview and a typed
        confirmation.</p></details>
   <details><summary>What are Track boards (.nts files)?</summary>
