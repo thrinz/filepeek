@@ -119,7 +119,7 @@
   .shots figcaption { color: var(--dim); font-size: .85rem; margin-top: .4rem; text-align: center; }
 
   .badges { margin: 1rem 0 .25rem; }
-  .badges img { height: 20px; margin: 0 .15rem; vertical-align: middle; }
+  .badges img { height: 20px; width: auto; margin: 0 .15rem; vertical-align: middle; }
 
   .flow { display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
           gap: .5rem; margin: 1.5rem 0; color: var(--dim); font-size: .92rem; }
@@ -146,7 +146,7 @@
   <img src="logo.svg" alt="filepeek logo">
   <h1>Your AI agent wrote 200 files.<br>Stop reading them in a terminal.</h1>
   <p class="tagline">filepeek is a free, self-hosted browser that renders the Markdown, Mermaid,
-     Excel, Word, HTML, and code your agents produce — Claude Code, ChatGPT, Cursor, anything —
+     Excel, Word, HTML, images, and code your agents produce — Claude Code, ChatGPT, Cursor, anything —
      straight from your local filesystem.</p>
   <a class="cta" href="https://github.com/thrinz/filepeek">Get it on GitHub</a>
   <a class="cta alt" href="https://github.com/thrinz/filepeek/blob/main/docs/INSTALL.md">Quick start</a>
@@ -202,7 +202,8 @@
     <div class="card"><h3>📝 Markdown + Mermaid</h3><p>AI-written docs, plans, and reports rendered with tables, code blocks, and Mermaid diagrams.</p></div>
     <div class="card"><h3>📊 Excel, Word, PowerPoint</h3><p>View xlsx, docx, and pptx in the browser — no Microsoft Office, no LibreOffice, no upload.</p></div>
     <div class="card"><h3>🌐 HTML pages</h3><p>Agent-built dashboards and mockups served directly, ready to click through.</p></div>
-    <div class="card"><h3>💻 Code &amp; data</h3><p>~60 languages, CSV/TSV as sortable tables, images, SVG, and PDFs inline.</p></div>
+    <div class="card"><h3>💻 Code &amp; data</h3><p>~60 languages, CSV/TSV as sortable tables, SVG, and PDFs inline.</p></div>
+    <div class="card"><h3>🖼️ Images, video &amp; audio</h3><p>View PNG/JPG/GIF/WebP, play mp4/webm/mov video and mp3/wav audio — inline, no download.</p></div>
     <div class="card"><h3>🔍 Search &amp; organize</h3><p>Filename and full-text search, bookmarks, and a bookmarkable URL for every folder and file.</p></div>
     <div class="card"><h3>🔐 Self-hosted &amp; private</h3><p>Your files never leave your machine. Optional HTTPS + password mode for cloud servers and Tailscale.</p></div>
   </div>
