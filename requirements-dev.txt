@@ -1,4 +1,5 @@
 -r requirements.txt
 pytest
 httpx           # FastAPI TestClient transport
+moto[s3]        # mock S3 for backup tests (no real cloud needed)
 playwright      # e2e browser tests (then: playwright install chromium)

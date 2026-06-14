@@ -36,8 +36,11 @@ def root(tmp_path, monkeypatch):
     (root / "binary.bin").write_bytes(b"\x00\x01\x02binary-ish")
 
     monkeypatch.setattr(filepeek, "ROOT", root.resolve())
+    monkeypatch.setattr(filepeek, "STATE_DIR", state)
     monkeypatch.setattr(filepeek, "PERMLINKS_FILE", state / "permlinks.json")
     monkeypatch.setattr(filepeek, "BOOKMARKS_FILE", state / "bookmarks.json")
+    monkeypatch.setattr(filepeek, "BACKUP_CONFIG_FILE", state / "backup_config.json")
+    monkeypatch.setattr(filepeek, "BACKUP_LOG_FILE", state / "backup.log")
     return root
 
 
@@ -57,3 +60,22 @@ def auth_client(root, monkeypatch):
     monkeypatch.setattr(time, "sleep", lambda s: None)  # skip the failed-login delay
     filepeek._login_failures.clear()
     return TestClient(filepeek.app)
+
+
+# --- S3 fixture (mocked, no real cloud) -------------------------------------
+
+@pytest.fixture
+def s3_bucket(monkeypatch):
+    """A mocked S3 bucket 'test-bucket' via moto. Yields the S3 config dict
+    filepeek would store, plus a live boto3 client to assert against."""
+    from moto import mock_aws
+    import boto3
+    with mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket="test-bucket")
+        cfg = {
+            "bucket": "test-bucket", "prefix": "backup", "endpoint": "",
+            "region": "us-east-1", "access_key_id": "testing",
+            "secret_access_key": "testing",
+        }
+        yield {"cfg": cfg, "client": client}

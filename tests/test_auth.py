@@ -73,6 +73,16 @@ def test_lockout_after_repeated_failures(auth_client):
     assert r.status_code == 429
 
 
+def test_backup_endpoints_require_auth(auth_client):
+    assert auth_client.get("/api/backup/config").status_code == 401
+    assert auth_client.get("/api/backup/status").status_code == 401
+    assert auth_client.get("/api/backup/logs").status_code == 401
+    assert auth_client.post("/api/backup/config", json={"type": "local", "destination": "/x"}).status_code == 401
+    assert auth_client.post("/api/backup/test").status_code == 401
+    assert auth_client.post("/api/backup/preview").status_code == 401
+    assert auth_client.post("/api/backup/run", json={}).status_code == 401
+
+
 def test_lockout_counter_resets_on_success(auth_client):
     for _ in range(filepeek.LOGIN_MAX_FAILURES - 1):
         auth_client.post("/login", data={"password": "wrong"})

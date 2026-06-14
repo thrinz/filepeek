@@ -107,6 +107,15 @@ if (localStorage.getItem("filepeek-theme") === "dark" ||
   .markdown-body th { background: #f1f5f9; font-weight: 600; }
   .markdown-body hr { border: 0; border-top: 1px solid #e2e8f0; margin: 1.5em 0; }
   .markdown-body img { max-width: 100%; }
+  /* --- .nts Kanban board --- */
+  #board-view { background: #f1f5f9; }
+  .nts-columns { scrollbar-width: thin; scrollbar-color: #cbd5e1 #f1f5f9; }
+  .nts-columns::-webkit-scrollbar { height: 10px; }
+  .nts-columns::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 5px; }
+  .nts-col { width: 18rem; min-width: 18rem; }
+  .nts-card { cursor: pointer; }
+  .nts-card.dragging { opacity: .45; }
+  .nts-col.drop-target { outline: 2px dashed #60a5fa; outline-offset: -2px; background: #eff6ff; }
 
   /* ---- dark theme (family "ink" palette, shared with webterm) ---- */
   .dark .spinner { border-color: #232a3a; border-top-color: #60a5fa; }
@@ -126,6 +135,10 @@ if (localStorage.getItem("filepeek-theme") === "dark" ||
   .dark .markdown-body th, .dark .markdown-body td { border-color: #232a3a; }
   .dark .markdown-body th { background: #1a2030; }
   .dark .markdown-body hr { border-top-color: #232a3a; }
+  .dark #board-view { background: #0b0e14; }
+  .dark .nts-columns { scrollbar-color: #232a3a #0b0e14; }
+  .dark .nts-columns::-webkit-scrollbar-thumb { background: #232a3a; }
+  .dark .nts-col.drop-target { background: #11151f; }
 </style>
 </head>
 <body class="h-screen flex flex-col bg-slate-50 dark:bg-ink-bg text-slate-800 dark:text-ink-fg text-sm">
@@ -143,6 +156,15 @@ if (localStorage.getItem("filepeek-theme") === "dark" ||
          class="dropdown absolute left-0 right-0 top-full mt-1 bg-white dark:bg-ink-side text-slate-800 dark:text-ink-fg border border-slate-200 dark:border-ink-border rounded shadow-lg max-h-80 overflow-y-auto z-50"></div>
   </div>
   <div class="ml-auto flex items-center gap-4">
+    <div class="relative">
+      <button id="track-menu-btn" class="flex items-center gap-2 text-xs text-slate-400 dark:text-ink-dim hover:text-white">
+        <span>&#128203; Tracks</span>
+        <span id="track-count" class="bg-slate-700 text-slate-200 px-1.5 rounded">0</span>
+        <span class="text-[10px]">&#9662;</span>
+      </button>
+      <div id="track-menu"
+           class="dropdown absolute right-0 top-full mt-1 bg-white dark:bg-ink-side text-slate-800 dark:text-ink-fg border border-slate-200 dark:border-ink-border rounded shadow-lg w-80 max-h-96 overflow-y-auto z-50"></div>
+    </div>
     <div class="relative">
       <button id="bookmark-menu-btn" class="flex items-center gap-2 text-xs text-slate-400 dark:text-ink-dim hover:text-white">
         <span>&#11088; Bookmarks</span>
@@ -175,6 +197,7 @@ if (localStorage.getItem("filepeek-theme") === "dark" ||
       <button id="btn-upload" title="Upload file (max 500MB)" class="px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">&#11014; Upload</button>
       <input type="file" id="upload-input" class="hidden">
       <button id="btn-zip-folder" title="Download this folder as a zip (max 500MB)" class="px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">&#11015; Download Folder</button>
+      <button id="btn-backup" title="Backup — protect your files locally or to cloud storage" class="px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">&#9729; Backup</button>
       <button id="btn-search" title="Search filenames"
               class="px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">&#128269;</button>
       <button id="btn-refresh" title="Refresh folder"
@@ -249,6 +272,7 @@ if (localStorage.getItem("filepeek-theme") === "dark" ||
       <div id="audio-view" class="hidden flex-1 overflow-auto flex items-center justify-center bg-slate-100 dark:bg-ink-hover p-4">
         <audio controls class="w-full max-w-xl"></audio>
       </div>
+      <div id="board-view" class="hidden flex-1 flex flex-col min-h-0"></div>
     </div>
   </section>
 </main>
@@ -326,6 +350,85 @@ if (localStorage.getItem("filepeek-theme") === "dark" ||
   </div>
 </div>
 
+<div id="backup-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+  <div class="bg-white dark:bg-ink-side rounded-lg shadow-xl w-full max-w-lg mx-4 p-5 flex flex-col" style="max-height: 88vh;">
+    <div class="flex items-center justify-between mb-1">
+      <h2 class="font-semibold text-base">Backup</h2>
+      <button id="backup-close" class="text-slate-400 dark:text-ink-dim hover:text-slate-600 dark:hover:text-ink-fg text-2xl leading-none">&times;</button>
+    </div>
+    <p class="text-xs text-slate-500 dark:text-ink-dim mb-3">Backups run only while Filepeek is running.</p>
+
+    <!-- Configure / status -->
+    <div id="backup-main" class="flex flex-col min-h-0 overflow-y-auto">
+      <div class="mb-3">
+        <div class="text-xs font-medium mb-1">Folders to back up
+          <span class="text-slate-400 dark:text-ink-dim font-normal">(under <span id="backup-source" class="font-mono"></span>)</span>
+        </div>
+        <div id="backup-folders" class="flex flex-wrap gap-x-4 gap-y-1 text-xs max-h-28 overflow-y-auto border border-slate-200 dark:border-ink-border rounded p-2"></div>
+        <p class="text-[11px] text-slate-400 dark:text-ink-dim mt-1">All checked = everything (including folders added later). Uncheck to back up only specific folders.</p>
+      </div>
+
+      <div id="backup-statusbox" class="hidden mb-3 p-2 rounded border border-slate-200 dark:border-ink-border bg-slate-50 dark:bg-ink-bg text-xs"></div>
+
+      <div class="mb-2 font-medium text-xs">Destination</div>
+      <div class="flex gap-4 mb-2 text-xs">
+        <label class="flex items-center gap-1.5"><input type="radio" name="backup-type" id="backup-type-local" value="local"> Local / NAS folder</label>
+        <label class="flex items-center gap-1.5"><input type="radio" name="backup-type" id="backup-type-s3" value="s3"> S3-compatible cloud</label>
+      </div>
+      <div id="backup-dest-local" class="hidden mb-3">
+        <input id="backup-local-path" spellcheck="false" placeholder="/mnt/nas/filepeek-backup"
+               class="w-full px-2 py-1.5 border border-slate-300 dark:border-ink-border rounded font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <div id="backup-dest-s3" class="hidden mb-3 grid grid-cols-2 gap-2">
+        <input id="backup-s3-bucket" spellcheck="false" placeholder="bucket name"
+               class="px-2 py-1.5 border border-slate-300 dark:border-ink-border rounded font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <input id="backup-s3-prefix" spellcheck="false" placeholder="folder/prefix (optional)"
+               class="px-2 py-1.5 border border-slate-300 dark:border-ink-border rounded font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <input id="backup-s3-endpoint" spellcheck="false" placeholder="endpoint URL — blank for AWS"
+               class="col-span-2 px-2 py-1.5 border border-slate-300 dark:border-ink-border rounded font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <input id="backup-s3-region" spellcheck="false" placeholder="region (optional)"
+               class="px-2 py-1.5 border border-slate-300 dark:border-ink-border rounded font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <input id="backup-s3-key" spellcheck="false" placeholder="access key ID"
+               class="px-2 py-1.5 border border-slate-300 dark:border-ink-border rounded font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <input id="backup-s3-secret" type="password" spellcheck="false" placeholder="secret access key"
+               class="col-span-2 px-2 py-1.5 border border-slate-300 dark:border-ink-border rounded font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <p class="col-span-2 text-[11px] text-slate-400 dark:text-ink-dim">Works with AWS S3, Backblaze B2, Wasabi, Cloudflare R2, MinIO. Create a bucket and an access key in the provider's console once, then paste them here.</p>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 mb-2">
+        <label class="text-xs">Frequency
+          <select id="backup-frequency" class="mt-1 w-full px-2 py-1.5 border border-slate-300 dark:border-ink-border rounded bg-white dark:bg-ink-side text-xs">
+            <option value="5">Every 5 minutes</option>
+            <option value="15" selected>Every 15 minutes</option>
+            <option value="60">Every hour</option>
+            <option value="1440">Daily</option>
+          </select>
+        </label>
+        <label class="text-xs flex items-end gap-2 pb-1">
+          <input type="checkbox" id="backup-enabled"> <span>Enable automatic backup</span>
+        </label>
+      </div>
+
+      <div class="mb-2 text-xs font-medium">Mode</div>
+      <label class="flex items-start gap-2 text-xs mb-1"><input type="radio" name="backup-mode" id="backup-mode-copy" value="copy" checked>
+        <span><b>Safe backup</b> — adds and updates files; never deletes anything at the destination.</span></label>
+      <label class="flex items-start gap-2 text-xs mb-2"><input type="radio" name="backup-mode" id="backup-mode-mirror" value="sync">
+        <span><b>Mirror backup (advanced)</b> — makes the destination exactly match the source. Mirror mode can delete files from the destination. Use only with a dedicated backup folder.</span></label>
+
+      <pre id="backup-error" class="hidden mb-2 p-2 bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 rounded text-[11px] whitespace-pre-wrap max-h-32 overflow-y-auto"></pre>
+      <div id="backup-logs" class="hidden mb-2 p-2 bg-slate-900 text-slate-200 rounded text-[10px] font-mono whitespace-pre-wrap max-h-40 overflow-y-auto"></div>
+      <div id="backup-progress" class="hidden mb-2 text-xs font-mono text-slate-500 dark:text-ink-dim"></div>
+
+      <div class="flex items-center gap-2 mt-1">
+        <button id="backup-save" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs">Save settings</button>
+        <button id="backup-test" class="px-3 py-1.5 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover text-xs">Test destination</button>
+        <button id="backup-logs-btn" class="px-3 py-1.5 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover text-xs">Logs</button>
+        <button id="backup-now" class="ml-auto px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs">Backup now</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="ctx-menu" class="dropdown fixed z-50 bg-white dark:bg-ink-side border border-slate-200 dark:border-ink-border rounded shadow-lg py-1 text-sm min-w-[10rem]"></div>
 
 <div id="toast"
@@ -336,7 +439,7 @@ if (localStorage.getItem("filepeek-theme") === "dark" ||
 
 <script>
 const state = { path: "", sort: "name", file: null, dirty: false, mode: "view", previewMode: false, sheetIdx: 0, bookmarks: [],
-                wrap: localStorage.getItem("editor-wrap") === "1" };
+                wrap: localStorage.getItem("editor-wrap") === "1", board: null, boardCode: false };
 const IMAGE_EXTS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".avif"];
 const VIDEO_EXTS = [".mp4", ".webm", ".ogv", ".mov", ".m4v"];
 const AUDIO_EXTS = [".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac"];
@@ -648,6 +751,20 @@ function renderFile() {
   const binaryBadge = f.is_text ? "" : '<span class="ml-2 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 px-1.5 py-0.5 rounded text-[11px]">binary</span>';
   $("file-info").innerHTML = `<strong>${escapeHtml(f.name)}</strong> · ${f.size} bytes · ${escapeHtml(f.mime)}${binaryBadge}`;
 
+  // .nts files are interactive Kanban boards, not plain text — render the board panel.
+  if (f.ext === ".nts") {
+    for (const id of ["btn-edit", "btn-save", "btn-copy", "btn-wrap", "btn-toggle-preview", "btn-permlink"])
+      $(id).classList.add("hidden");
+    for (const id of ["btn-download", "btn-rename", "btn-copy-to", "btn-move-to", "btn-delete"])
+      $(id).classList.remove("hidden");
+    state.board = loadBoard(f.content || "");
+    state.boardCode = false;
+    _ntsDisplay = "board";
+    _ntsFilter = { status: "", owner: "" };
+    showPanel("board");
+    return;
+  }
+
   const editor = $("editor");
   const isPdf = f.ext === ".pdf";
   const isImg = IMAGE_EXTS.includes(f.ext);
@@ -714,6 +831,7 @@ function showPanel(which) {
     code: "editor", md: "preview", html: "preview-iframe", csv: "csv-view",
     json: "json-view", pdf: "pdf-view", img: "img-view", sheet: "csv-view", doc: "preview",
     pptx: "preview", mermaid: "mermaid-view", video: "video-view", audio: "audio-view",
+    board: "board-view",
   };
   for (const id of new Set(Object.values(ids))) $(id).classList.add("hidden");
   if (which !== "pdf") $("pdf-view").removeAttribute("src");
@@ -752,6 +870,8 @@ function showPanel(which) {
     $("preview").innerHTML = f.office.html
       ? `<div class="pptx-bg">${f.office.html}</div>`
       : '<div class="text-slate-400 dark:text-ink-dim">Empty presentation</div>';
+  } else if (which === "board") {
+    renderBoard();
   }
   $(ids[which]).classList.remove("hidden");
 }
@@ -1051,6 +1171,7 @@ async function newItem(isDir) {
       body: JSON.stringify({ path, is_dir: isDir }),
     });
     await loadTree(state.path);
+    if (!isDir && name.toLowerCase().endsWith(".nts")) loadTracks();
     toast(isDir ? "Folder created" : "File created");
   } catch (e) { toast("Error: " + e.message); }
 }
@@ -1075,6 +1196,7 @@ async function deleteEntry(path, name, isDir) {
     await loadTree(state.path);
     loadPermlinks();
     loadBookmarks();
+    loadTracks();
     toast(`Deleted ${name}`);
   } catch (e) { toast("Error: " + e.message); }
 }
@@ -1185,6 +1307,206 @@ async function transferConfirm() {
     await loadTree(state.path);
     if (mode === "move") loadPermlinks(), loadBookmarks();
     toast(`${mode === "move" ? "Moved" : "Copied"} ${srcName}`);
+  } catch (e) { toast("Error: " + e.message); }
+}
+
+// --- Backup -----------------------------------------------------------------
+function apiPost(url, payload) {
+  return api(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {}),
+  });
+}
+
+const bk = { timer: null };
+
+function openBackupModal() {
+  $("backup-error").classList.add("hidden");
+  $("backup-logs").classList.add("hidden");
+  $("backup-modal").classList.remove("hidden");
+  refreshBackup();
+}
+
+function closeBackupModal() {
+  clearInterval(bk.timer);
+  bk.timer = null;
+  $("backup-modal").classList.add("hidden");
+}
+
+function renderBackupDestInputs() {
+  const t = document.querySelector('input[name="backup-type"]:checked');
+  const type = t ? t.value : null;
+  $("backup-dest-local").classList.toggle("hidden", type !== "local");
+  $("backup-dest-s3").classList.toggle("hidden", type !== "s3");
+}
+
+function onBackupModeChange() {
+  $("backup-error").classList.add("hidden");
+}
+
+async function refreshBackup() {
+  let cfg;
+  try { cfg = await api("/api/backup/config"); }
+  catch (e) { toast("Error: " + e.message); closeBackupModal(); return; }
+
+  $("backup-source").textContent = cfg.source_path;
+
+  // folder picker — all checked when sources is empty (= whole root)
+  const fbox = $("backup-folders");
+  fbox.innerHTML = "";
+  const allFolders = !cfg.sources || cfg.sources.length === 0;
+  for (const name of cfg.available_folders || []) {
+    const label = document.createElement("label");
+    label.className = "flex items-center gap-1.5 cursor-pointer";
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.className = "backup-folder-cb"; cb.value = name;
+    cb.checked = allFolders || cfg.sources.includes(name);
+    label.appendChild(cb);
+    const span = document.createElement("span"); span.textContent = name;
+    label.appendChild(span);
+    fbox.appendChild(label);
+  }
+
+  if (cfg.type === "local") {
+    $("backup-type-local").checked = true;
+    $("backup-local-path").value = cfg.destination || "";
+  } else if (cfg.type === "s3" && cfg.s3) {
+    $("backup-type-s3").checked = true;
+    $("backup-s3-bucket").value = cfg.s3.bucket || "";
+    $("backup-s3-prefix").value = cfg.s3.prefix || "";
+    $("backup-s3-endpoint").value = cfg.s3.endpoint || "";
+    $("backup-s3-region").value = cfg.s3.region || "";
+    $("backup-s3-key").value = cfg.s3.access_key_id || "";
+    $("backup-s3-secret").value = "";
+    $("backup-s3-secret").placeholder = cfg.s3.has_secret
+      ? "•••••••• stored — leave blank to keep" : "secret access key";
+  }
+  renderBackupDestInputs();
+
+  $("backup-frequency").value = String(cfg.frequency_minutes || 15);
+  $("backup-enabled").checked = !!cfg.enabled;
+  (cfg.mode === "sync" ? $("backup-mode-mirror") : $("backup-mode-copy")).checked = true;
+
+  renderBackupStatus(cfg);
+  pollBackupStatus();  // reflect any in-progress run
+}
+
+function renderBackupStatus(cfg) {
+  const box = $("backup-statusbox");
+  if (!cfg.last_run && !cfg.last_status) { box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  const ok = cfg.last_status === "success";
+  box.innerHTML =
+    `<div>Last backup: ${cfg.last_run ? fmtDate(cfg.last_run) : "never"} · ` +
+    `<span class="${ok ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}">${cfg.last_status || "—"}</span></div>` +
+    (cfg.files_copied != null ? `<div class="text-slate-500 dark:text-ink-dim">${cfg.files_copied} files · ${fmtSize(cfg.bytes_copied)} last run</div>` : "") +
+    (cfg.last_message ? `<div class="text-slate-500 dark:text-ink-dim font-mono mt-0.5 truncate">${escapeHtml(cfg.last_message)}</div>` : "");
+}
+
+function backupFormPayload() {
+  const t = document.querySelector('input[name="backup-type"]:checked');
+  const type = t ? t.value : null;
+  const boxes = [...document.querySelectorAll(".backup-folder-cb")];
+  const checked = boxes.filter(b => b.checked).map(b => b.value);
+  // all checked → empty (whole root, future-proof); a subset → that explicit list
+  const sources = (boxes.length && checked.length === boxes.length) ? [] : checked;
+  const payload = {
+    enabled: $("backup-enabled").checked,
+    type,
+    sources,
+    frequency_minutes: parseInt($("backup-frequency").value, 10),
+    mode: $("backup-mode-mirror").checked ? "sync" : "copy",
+  };
+  if (type === "local") {
+    payload.destination = $("backup-local-path").value.trim();
+  } else if (type === "s3") {
+    payload.s3 = {
+      bucket: $("backup-s3-bucket").value.trim(),
+      prefix: $("backup-s3-prefix").value.trim(),
+      endpoint: $("backup-s3-endpoint").value.trim(),
+      region: $("backup-s3-region").value.trim(),
+      access_key_id: $("backup-s3-key").value.trim(),
+      secret_access_key: $("backup-s3-secret").value,  // blank = keep stored secret
+    };
+  }
+  return payload;
+}
+
+async function persistBackupConfig() {
+  $("backup-error").classList.add("hidden");
+  const cfg = await apiPost("/api/backup/config", backupFormPayload());
+  renderBackupStatus(cfg);
+  return cfg;
+}
+
+async function saveBackupConfig() {
+  try { await persistBackupConfig(); toast("Backup settings saved"); }
+  catch (e) { showBackupError(e.message); }
+}
+
+function showBackupError(msg) {
+  const el = $("backup-error");
+  el.textContent = msg;
+  el.classList.remove("hidden");
+}
+
+async function testBackupDest() {
+  try {
+    await persistBackupConfig();
+    const r = await apiPost("/api/backup/test");
+    toast(r.message || "Destination OK");
+  } catch (e) { showBackupError(e.message); }
+}
+
+async function backupNow() {
+  try {
+    const cfg = await persistBackupConfig();
+    if (cfg.mode === "sync") {
+      // preview deletions, require an explicit MIRROR confirmation
+      const p = await apiPost("/api/backup/preview");
+      const msg = `Mirror backup to:\n${cfg.destination}\n\n` +
+        `${p.copy} new, ${p.update} updated, ${p.delete} will be DELETED at the destination.\n\n` +
+        `Files that exist only at the destination may be deleted.\nType MIRROR to continue.`;
+      const answer = prompt(msg);
+      if (answer !== "MIRROR") { toast("Mirror backup cancelled"); return; }
+      await apiPost("/api/backup/run", { acknowledge_mirror: true });
+    } else {
+      await apiPost("/api/backup/run");
+    }
+    $("backup-progress").classList.remove("hidden");
+    $("backup-progress").textContent = "Starting…";
+    pollBackupStatus();
+  } catch (e) { showBackupError(e.message); }
+}
+
+async function pollBackupStatus() {
+  clearInterval(bk.timer);
+  const tick = async () => {
+    let s;
+    try { s = await api("/api/backup/status"); } catch { return; }
+    if (s.running) {
+      $("backup-progress").classList.remove("hidden");
+      $("backup-progress").textContent = s.progress || "Backing up…";
+      return;
+    }
+    clearInterval(bk.timer);
+    bk.timer = null;
+    $("backup-progress").classList.add("hidden");
+    renderBackupStatus(s);
+    if (s.last_status === "failed" && s.last_message) showBackupError(s.last_message);
+  };
+  bk.timer = setInterval(tick, 800);
+  tick();
+}
+
+async function showBackupLogs() {
+  const box = $("backup-logs");
+  if (!box.classList.contains("hidden")) { box.classList.add("hidden"); return; }
+  try {
+    const r = await api("/api/backup/logs");
+    box.textContent = r.logs || "(no backup logs yet)";
+    box.classList.remove("hidden");
   } catch (e) { toast("Error: " + e.message); }
 }
 
@@ -1307,7 +1629,19 @@ $("transfer-cancel").onclick = closeTransfer;
 $("transfer-confirm").onclick = transferConfirm;
 $("transfer-modal").onclick = e => { if (e.target === $("transfer-modal")) closeTransfer(); };
 document.addEventListener("click", e => { if (!$("ctx-menu").contains(e.target)) hideContextMenu(); });
-document.addEventListener("keydown", e => { if (e.key === "Escape") { hideContextMenu(); closeTransfer(); } });
+document.addEventListener("keydown", e => { if (e.key === "Escape") { hideContextMenu(); closeTransfer(); closeBackupModal(); } });
+
+$("btn-backup").onclick = openBackupModal;
+$("backup-close").onclick = closeBackupModal;
+$("backup-modal").onclick = e => { if (e.target === $("backup-modal")) closeBackupModal(); };
+$("backup-type-local").onchange = renderBackupDestInputs;
+$("backup-type-s3").onchange = renderBackupDestInputs;
+$("backup-save").onclick = saveBackupConfig;
+$("backup-test").onclick = testBackupDest;
+$("backup-now").onclick = backupNow;
+$("backup-logs-btn").onclick = showBackupLogs;
+$("backup-mode-mirror").onchange = onBackupModeChange;
+$("backup-mode-copy").onchange = onBackupModeChange;
 
 $("rename-close").onclick = closeRename;
 $("rename-cancel").onclick = closeRename;
@@ -1337,6 +1671,17 @@ $("bookmark-menu-btn").onclick = e => { e.stopPropagation(); $("bookmark-menu").
 document.addEventListener("click", e => {
   if (!$("bookmark-menu-btn").contains(e.target) && !$("bookmark-menu").contains(e.target))
     $("bookmark-menu").classList.remove("show");
+});
+
+$("track-menu-btn").onclick = e => {
+  e.stopPropagation();
+  const m = $("track-menu");
+  m.classList.toggle("show");
+  if (m.classList.contains("show")) loadTracks();   // always show a fresh list
+};
+document.addEventListener("click", e => {
+  if (!$("track-menu-btn").contains(e.target) && !$("track-menu").contains(e.target))
+    $("track-menu").classList.remove("show");
 });
 
 setupAutocomplete("search-filename", "filename-dropdown", "/api/search/filename",
@@ -1400,6 +1745,1120 @@ window.addEventListener("popstate", async () => {
 openFromUrl(new URLSearchParams(location.search).get("path") || "").catch(() => loadTree());
 loadPermlinks();
 loadBookmarks();
+loadTracks();
+
+// --- Tracks (.nts board files) ------------------------------------------
+async function loadTracks() {
+  const menu = $("track-menu");
+  menu.innerHTML = "";
+  // The create action is always rendered first, even if the listing fetch fails,
+  // so the "New board" option is never hidden by an API error.
+  const create = document.createElement("div");
+  create.className = "px-3 py-2 border-b border-slate-200 dark:border-ink-border sticky top-0 bg-white dark:bg-ink-side";
+  create.innerHTML = '<button class="w-full text-left text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium">&#43; New board&hellip;</button>';
+  create.querySelector("button").onclick = openNewBoardModal;
+  menu.appendChild(create);
+  try {
+    const data = await api("/api/nts");
+    $("track-count").textContent = data.tracks.length;
+    if (!data.tracks.length) {
+      const empty = document.createElement("div");
+      empty.className = "px-3 py-2 text-slate-400 dark:text-ink-dim text-xs";
+      empty.textContent = "No .nts boards yet";
+      menu.appendChild(empty);
+      return;
+    }
+    for (const t of data.tracks) {
+      const item = document.createElement("div");
+      item.className = "px-3 py-2 hover:bg-blue-50 dark:hover:bg-ink-hover border-b border-slate-100 dark:border-ink-border last:border-0 flex items-center gap-2";
+      item.innerHTML = `
+        <span class="open flex-1 min-w-0 cursor-pointer">
+          <span class="block font-medium truncate">&#128203; ${escapeHtml(t.name)}</span>
+          <span class="block text-xs text-slate-500 dark:text-ink-dim font-mono truncate">${escapeHtml(t.path)} · ${fmtDate(t.modified)}</span>
+        </span>
+        <button class="share text-slate-400 dark:text-ink-dim hover:text-blue-600 dark:hover:text-blue-400 text-base leading-none px-1" title="Copy shareable (editable) link">&#128279;</button>`;
+      item.querySelector(".open").onclick = async () => { $("track-menu").classList.remove("show"); await navigateToFile(t.path); };
+      item.querySelector(".share").onclick = async (e) => {
+        e.stopPropagation();
+        const url = boardShareUrl(t.path);
+        try { await navigator.clipboard.writeText(url); toast("Share link copied"); }
+        catch { $("track-menu").classList.remove("show"); openShareModal(t.path); }
+      };
+      menu.appendChild(item);
+    }
+  } catch {
+    const err = document.createElement("div");
+    err.className = "px-3 py-2 text-amber-600 dark:text-amber-400 text-xs";
+    err.textContent = "Couldn't load boards — restart the server to enable /api/nts.";
+    menu.appendChild(err);
+  }
+}
+
+// Create a new .nts board, letting the user browse to the destination folder.
+async function openNewBoardModal() {
+  $("track-menu").classList.remove("show");
+  let curDir = state.path || "";
+  const overlay = ntsOverlay();
+  const close = () => overlay.remove();
+  overlay.innerHTML = `<div class="bg-white dark:bg-ink-side rounded-lg shadow-xl w-full max-w-lg mx-4 flex flex-col" style="max-height:85vh">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-slate-200 dark:border-ink-border">
+        <h2 class="font-semibold text-base">New Tracks board</h2>
+        <button class="nb-x text-slate-400 dark:text-ink-dim hover:text-slate-600 dark:hover:text-ink-fg text-2xl leading-none">&times;</button>
+      </div>
+      <div class="p-5 space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-500 dark:text-ink-dim mb-1">File name</label>
+          <input id="nb-name" class="w-full px-2 py-1.5 border border-slate-300 dark:border-ink-border rounded font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" value="board.nts">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-500 dark:text-ink-dim mb-1">Folder</label>
+          <div id="nb-breadcrumb" class="px-2 py-1.5 bg-slate-50 dark:bg-ink-bg border border-slate-200 dark:border-ink-border rounded font-mono text-xs overflow-x-auto whitespace-nowrap mb-2"></div>
+          <div id="nb-list" class="overflow-y-auto border border-slate-200 dark:border-ink-border rounded" style="height:14rem"></div>
+        </div>
+      </div>
+      <div class="px-5 py-3 border-t border-slate-200 dark:border-ink-border flex items-center gap-2">
+        <span id="nb-dest" class="mr-auto text-xs text-slate-500 dark:text-ink-dim font-mono truncate"></span>
+        <button class="nb-x px-3 py-1.5 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">Cancel</button>
+        <button id="nb-create" class="px-4 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700">Create</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelectorAll(".nb-x").forEach(b => b.onclick = close);
+
+  const browse = async (dir) => {
+    let data;
+    try { data = await api(`/api/tree?path=${encodeURIComponent(dir)}`); }
+    catch (e) { toast("Error: " + e.message); return; }
+    curDir = data.path;
+    const bc = overlay.querySelector("#nb-breadcrumb"); bc.innerHTML = "";
+    const crumb = (label, target) => { const s = document.createElement("span"); s.textContent = label; s.className = "text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"; s.onclick = () => browse(target); return s; };
+    bc.appendChild(crumb("projects", ""));
+    let acc = "";
+    for (const part of curDir ? curDir.split("/") : []) { acc = acc ? acc + "/" + part : part; bc.appendChild(document.createTextNode(" / ")); bc.appendChild(crumb(part, acc)); }
+    const list = overlay.querySelector("#nb-list"); list.innerHTML = "";
+    if (curDir) {
+      const up = document.createElement("div");
+      up.className = "px-3 py-1.5 cursor-pointer hover:bg-blue-50 dark:hover:bg-ink-hover flex items-center gap-2 select-none";
+      up.innerHTML = `<span class="w-5 text-center">&#11168;</span><span>..</span>`;
+      up.onclick = () => browse(curDir.split("/").slice(0, -1).join("/"));
+      list.appendChild(up);
+    }
+    const folders = data.entries.filter(e => e.is_dir);
+    if (!folders.length) {
+      const empty = document.createElement("div");
+      empty.className = "px-3 py-2 text-slate-400 dark:text-ink-dim text-xs";
+      empty.textContent = "No subfolders";
+      list.appendChild(empty);
+    }
+    for (const e of folders) {
+      const row = document.createElement("div");
+      row.className = "px-3 py-1.5 flex items-center gap-2 select-none cursor-pointer hover:bg-blue-50 dark:hover:bg-ink-hover";
+      row.innerHTML = `<span class="w-5 text-center">&#128193;</span><span class="flex-1 truncate">${escapeHtml(e.name)}</span>`;
+      row.onclick = () => browse(e.path);
+      list.appendChild(row);
+    }
+    overlay.querySelector("#nb-dest").textContent = `Create in: projects${curDir ? "/" + curDir : ""}`;
+  };
+  await browse(curDir);
+
+  overlay.querySelector("#nb-create").onclick = async () => {
+    let name = overlay.querySelector("#nb-name").value.trim();
+    if (!name) { toast("Enter a file name"); return; }
+    if (name.includes("/") || name.includes("\\")) { toast("Name can't contain slashes"); return; }
+    if (!name.toLowerCase().endsWith(".nts")) name += ".nts";
+    const path = curDir ? `${curDir}/${name}` : name;
+    try {
+      await api("/api/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, is_dir: false }) });
+      close();
+      await navigateToFile(path);
+      loadTracks();
+      toast("Board created");
+    } catch (e) {
+      toast(String(e.message).includes("exists") ? "A file with that name already exists here" : "Error: " + e.message);
+    }
+  };
+}
+
+// ============================================================================
+//  .nts Kanban board
+//  An .nts file is a JSON document rendered as an interactive board. The board
+//  is the source of truth in state.board; every mutation auto-saves the JSON
+//  back to disk. The rendered UI is ONLY ever built from state.board (never the
+//  raw textarea), so an invalid hand-edit in Code view can never corrupt it.
+// ============================================================================
+const NTS_PRIORITIES = ["Low", "Medium", "High", "Critical"];
+const NTS_PRIORITY_RANK = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+// Sort comparator: highest priority first, then priority number, then manual order.
+function byPriority(a, b) {
+  return (NTS_PRIORITY_RANK[a.priority] - NTS_PRIORITY_RANK[b.priority])
+    || (a.priorityNumber - b.priorityNumber)
+    || (a.order - b.order);
+}
+const NTS_PRIORITY_CLASS = {
+  Low: "bg-slate-100 text-slate-600", Medium: "bg-sky-100 text-sky-700",
+  High: "bg-amber-100 text-amber-800", Critical: "bg-red-100 text-red-700",
+};
+const NTS_LABEL_COLORS = ["#ef4444","#f97316","#eab308","#22c55e","#06b6d4","#3b82f6","#8b5cf6","#ec4899"];
+
+// Statuses — board-level, user-managed; these are the board's columns (they replace
+// the old fixed status enum + separate lanes). Each carries `allowBugs`, deciding
+// whether a task in that status can have its bugs edited.
+const STATUS_COLORS = ["#64748b", "#3b82f6", "#8b5cf6", "#f59e0b", "#22c55e", "#ef4444"];
+const SEED_STATUSES = [
+  { name: "To Do", allowBugs: false },
+  { name: "In Progress", allowBugs: true },
+  { name: "Testing", allowBugs: true },
+  { name: "Done", allowBugs: false },
+  { name: "Cancelled", allowBugs: false },
+];
+function seedStatuses() { return SEED_STATUSES.map((s, i) => ({ id: ntsId("s"), name: s.name, allowBugs: s.allowBugs, color: STATUS_COLORS[i % STATUS_COLORS.length] })); }
+// Statuses whose name suggests the task is finished (used only for the overdue hint).
+const TERMINAL_STATUS_RE = /\b(done|complete|completed|closed|cancel|cancelled|canceled|resolved|shipped|archived)\b/i;
+
+// Bugs
+const BUG_STATUSES = ["Open", "In Progress", "Fixed", "Closed"];
+const BUG_STATUS_CLASS = {
+  "Open": "bg-red-100 text-red-700", "In Progress": "bg-amber-100 text-amber-800",
+  "Fixed": "bg-emerald-100 text-emerald-700", "Closed": "bg-slate-100 text-slate-500",
+};
+// Categories — board-level; each carries a `bugs` flag deciding whether tasks in
+// that category get bug management. Seeded set; "Engineering / Technical" has bugs on.
+const SEED_CATEGORIES = [
+  { name: "Engineering / Technical", bugs: true },
+  { name: "Product", bugs: false },
+  { name: "Sales / BD", bugs: false },
+  { name: "Marketing", bugs: false },
+  { name: "People / Hiring", bugs: false },
+  { name: "Operations", bugs: false },
+];
+function seedCategories() { return SEED_CATEGORIES.map(c => ({ id: ntsId("cat"), name: c.name, bugs: c.bugs })); }
+function ntsCategory(id) { return id ? state.board.categories.find(c => c.id === id) : null; }
+// A task's bug tools are visible only when its category enables bugs, and editable
+// only while the task is In Progress or Testing.
+function categoryAllowsBugs(categoryId) {
+  const c = ntsCategory(categoryId);
+  return !!c && c.bugs === true;
+}
+function ntsStatus(id) { return id ? state.board.statuses.find(s => s.id === id) : null; }
+// A task's bug tools are editable only when its status has allowBugs on.
+function statusAllowsBugEdit(statusId) {
+  const s = ntsStatus(statusId);
+  return !!s && s.allowBugs === true;
+}
+function isTerminalStatus(statusId) {
+  const s = ntsStatus(statusId);
+  return !!s && TERMINAL_STATUS_RE.test(s.name);
+}
+function taskBugs(t) { return Array.isArray(t.bugs) ? t.bugs : []; }
+function taskChecklist(t) { return Array.isArray(t.checklist) ? t.checklist : []; }
+
+let _ntsSeq = 0;
+let _ntsDisplay = "board";                       // "board" | "table" | "bugs" (transient)
+let _ntsFilter = { status: "", owner: "" };
+let _bugFilter = { status: "", taskStatus: "" };
+let _boardSaveTimer = null;
+
+function ntsId(prefix) { return prefix + "-" + Date.now().toString(36) + "-" + (_ntsSeq++).toString(36); }
+function ntsNow() { return new Date().toISOString(); }
+function ntsLabel(id) { return id ? state.board.labels.find(lb => lb.id === id) : null; }
+function ntsTask(id) { return state.board.tasks.find(t => t.id === id); }
+function ntsActiveTasks() { return state.board.tasks.filter(t => !t.archived); }
+
+function seedBoard() {
+  return {
+    version: 1, boardView: "status", labels: [], owners: [], categories: seedCategories(),
+    statuses: seedStatuses(), tasks: [], bugSeq: 1,
+  };
+}
+
+// Parse + normalize file content into a board object. Never throws; blank or
+// unparseable content yields a fresh seeded board.
+function loadBoard(content) {
+  let raw = null;
+  if (content && content.trim()) { try { raw = JSON.parse(content); } catch { raw = null; } }
+  if (!raw || typeof raw !== "object") return seedBoard();
+  const board = {
+    version: 1,
+    boardView: ["label", "category", "owner", "status"].includes(raw.boardView) ? raw.boardView : "status",
+    labels: Array.isArray(raw.labels) ? raw.labels : [],
+    owners: Array.isArray(raw.owners) ? raw.owners.filter(o => typeof o === "string" && o.trim()) : [],
+    categories: Array.isArray(raw.categories) ? raw.categories : [],
+    tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
+    bugSeq: Number.isFinite(parseInt(raw.bugSeq, 10)) ? parseInt(raw.bugSeq, 10) : 1,
+  };
+  board.categories = board.categories
+    .filter(c => c && typeof c === "object")
+    .map(c => ({ id: c.id || ntsId("cat"), name: typeof c.name === "string" ? c.name : "Category", bugs: !!c.bugs }));
+  if (!board.categories.length) board.categories = seedCategories();
+  const categoryIds = new Set(board.categories.map(c => c.id));
+  // Statuses are the board columns. Migrate an old `lanes` array into statuses when present.
+  let rawStatuses = Array.isArray(raw.statuses) ? raw.statuses
+    : (Array.isArray(raw.lanes) ? raw.lanes.map(l => ({ id: l && l.id, name: l && l.title, allowBugs: /\b(in progress|testing|dev|development)\b/i.test((l && l.title) || "") })) : []);
+  board.statuses = rawStatuses
+    .filter(s => s && typeof s === "object")
+    .map((s, i) => ({ id: s.id || ntsId("s"), name: typeof s.name === "string" ? s.name : "Status",
+                      allowBugs: !!s.allowBugs, color: typeof s.color === "string" ? s.color : STATUS_COLORS[i % STATUS_COLORS.length] }));
+  if (!board.statuses.length) board.statuses = seedStatuses();
+  const statusIds = new Set(board.statuses.map(s => s.id));
+  board.labels = board.labels
+    .filter(lb => lb && typeof lb === "object")
+    .map((lb, i) => ({ id: lb.id || ntsId("lb"), name: typeof lb.name === "string" ? lb.name : "tag",
+                       color: typeof lb.color === "string" ? lb.color : NTS_LABEL_COLORS[i % NTS_LABEL_COLORS.length] }));
+  const labelIds = new Set(board.labels.map(lb => lb.id));
+  board.tasks = board.tasks
+    .filter(t => t && typeof t === "object")
+    .map((t, i) => {
+      const num = parseInt(t.priorityNumber, 10);
+      return {
+        id: t.id || ntsId("t"),
+        title: typeof t.title === "string" ? t.title : "",
+        description: typeof t.description === "string" ? t.description : "",
+        owner: typeof t.owner === "string" ? t.owner : "",
+        startDate: typeof t.startDate === "string" ? t.startDate : "",
+        dueDate: typeof t.dueDate === "string" ? t.dueDate : "",
+        categoryId: categoryIds.has(t.categoryId) ? t.categoryId : null,
+        created: t.created || ntsNow(),
+        modified: t.modified || t.created || ntsNow(),
+        priority: NTS_PRIORITIES.includes(t.priority) ? t.priority : "Medium",
+        priorityNumber: Number.isFinite(num) ? num : 0,
+        // statusId is the column; fall back to the old laneId, then the first status.
+        statusId: statusIds.has(t.statusId) ? t.statusId : (statusIds.has(t.laneId) ? t.laneId : board.statuses[0].id),
+        labelId: labelIds.has(t.labelId) ? t.labelId : null,
+        comments: Array.isArray(t.comments)
+          ? t.comments.filter(c => c && typeof c === "object")
+              .map(c => ({ id: c.id || ntsId("c"), text: String(c.text || ""), created: c.created || ntsNow() }))
+          : [],
+        archived: !!t.archived,
+        archivedAt: t.archived ? (t.archivedAt || ntsNow()) : null,
+        order: Number.isFinite(t.order) ? t.order : i,
+        checklist: Array.isArray(t.checklist)
+          ? t.checklist.filter(c => c && typeof c === "object")
+              .map(c => ({ id: c.id || ntsId("ck"), text: String(c.text || ""), done: !!c.done }))
+          : [],
+        bugs: Array.isArray(t.bugs)
+          ? t.bugs.filter(b => b && typeof b === "object").map(b => {
+              const bn = parseInt(b.number, 10);
+              return {
+                id: b.id || ntsId("b"),
+                number: Number.isFinite(bn) ? bn : 0,
+                title: typeof b.title === "string" ? b.title : "",
+                status: BUG_STATUSES.includes(b.status) ? b.status : "Open",
+                created: b.created || ntsNow(),
+                modified: b.modified || b.created || ntsNow(),
+              };
+            })
+          : [],
+      };
+    });
+  // Fold any owner names that exist on tasks (e.g. legacy free-text) into the owner list.
+  board.owners = [...new Set([...board.owners, ...board.tasks.map(t => t.owner).filter(Boolean)])];
+  // Keep the bug counter ahead of every existing bug number.
+  const maxBug = Math.max(0, ...board.tasks.flatMap(t => t.bugs.map(b => b.number)));
+  if (!(board.bugSeq > maxBug)) board.bugSeq = maxBug + 1;
+  return board;
+}
+
+// Debounced auto-save of the board JSON back to the .nts file on disk.
+function saveBoard() {
+  if (!state.board || !state.file) return;
+  const content = JSON.stringify(state.board, null, 2);
+  state.file.content = content;
+  clearTimeout(_boardSaveTimer);
+  _boardSaveTimer = setTimeout(async () => {
+    try {
+      await api("/api/file", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: state.file.path, content }),
+      });
+      toast("Saved");
+    } catch (e) { toast("Save failed: " + e.message); }
+  }, 250);
+}
+
+// Persist + re-render after a mutation.
+function boardChanged() { saveBoard(); renderBoard(); }
+
+// ---- mutators ----
+// Add a status (board column), asking whether bugs can be edited while a task is in it.
+function addStatus() {
+  const name = prompt("Status name:", "New Status");
+  if (name === null) return null;
+  const nm = name.trim() || "New Status";
+  const allowBugs = confirm(`Allow bug editing while a task is in "${nm}"?\n\nOK = yes\nCancel = no`);
+  const st = { id: ntsId("s"), name: nm, allowBugs, color: STATUS_COLORS[state.board.statuses.length % STATUS_COLORS.length] };
+  state.board.statuses.push(st);
+  boardChanged();
+  return st;
+}
+function renameStatus(id) {
+  const s = ntsStatus(id); if (!s) return;
+  const name = prompt("Status name:", s.name);
+  if (name === null) return;
+  s.name = name.trim() || s.name;
+  boardChanged();
+}
+function moveStatus(id, dir) {
+  const ss = state.board.statuses, i = ss.findIndex(s => s.id === id), j = i + dir;
+  if (i < 0 || j < 0 || j >= ss.length) return;
+  [ss[i], ss[j]] = [ss[j], ss[i]];
+  boardChanged();
+}
+function deleteStatus(id) {
+  if (state.board.tasks.some(t => !t.archived && t.statusId === id)) {
+    toast("Can't delete a status with tasks — move or archive them first"); return;
+  }
+  if (state.board.statuses.length <= 1) { toast("A board needs at least one status"); return; }
+  if (!confirm("Delete this status?")) return;
+  state.board.statuses = state.board.statuses.filter(s => s.id !== id);
+  boardChanged();
+}
+function archiveTask(id) {
+  const t = ntsTask(id); if (!t) return;
+  t.archived = true; t.archivedAt = ntsNow(); t.modified = ntsNow();
+  boardChanged();
+}
+function restoreTask(id, statusId) {
+  const t = ntsTask(id); if (!t) return;
+  t.archived = false; t.archivedAt = null;
+  t.statusId = (statusId && ntsStatus(statusId)) ? statusId : (ntsStatus(t.statusId) ? t.statusId : state.board.statuses[0].id);
+  t.order = ntsActiveTasks().filter(x => x.statusId === t.statusId).length;
+  t.modified = ntsNow();
+  boardChanged();
+}
+function setTaskStatus(id, statusId) {
+  const t = ntsTask(id); if (!t || !ntsStatus(statusId) || t.statusId === statusId) return;
+  t.statusId = statusId;
+  t.order = ntsActiveTasks().filter(x => x.statusId === statusId && x.id !== id).length;
+  t.modified = ntsNow();
+  boardChanged();
+}
+function setTaskLabel(id, labelId) {
+  const t = ntsTask(id); if (!t) return;
+  if ((t.labelId || null) === (labelId || null)) return;
+  t.labelId = labelId || null; t.modified = ntsNow();
+  boardChanged();
+}
+function setTaskCategory(id, categoryId) {
+  const t = ntsTask(id); if (!t) return;
+  if ((t.categoryId || null) === (categoryId || null)) return;
+  t.categoryId = categoryId || null; t.modified = ntsNow();
+  boardChanged();
+}
+function setTaskOwner(id, owner) {
+  const t = ntsTask(id); if (!t) return;
+  owner = owner || "";
+  if (t.owner === owner) return;
+  t.owner = owner; t.modified = ntsNow();
+  boardChanged();
+}
+// Add a category, asking whether it needs bug management. Returns the category or null.
+function addCategory() {
+  const name = prompt("Category name:");
+  if (name === null) return null;
+  const nm = name.trim(); if (!nm) return null;
+  const bugs = confirm(`Enable bug management for "${nm}"?\n\nOK = yes (tasks here can track bugs)\nCancel = no`);
+  const cat = { id: ntsId("cat"), name: nm, bugs };
+  state.board.categories.push(cat);
+  boardChanged();
+  return cat;
+}
+function addLabel() {
+  const name = prompt("Tag name:");
+  if (name === null) return;
+  const nm = name.trim(); if (!nm) return;
+  state.board.labels.push({ id: ntsId("lb"), name: nm, color: NTS_LABEL_COLORS[state.board.labels.length % NTS_LABEL_COLORS.length] });
+  boardChanged();
+}
+// Add an owner to the board's owner list; returns the stored name or null if blank/cancelled.
+function addOwner() {
+  const name = prompt("New owner name:");
+  if (name === null) return null;
+  const nm = name.trim(); if (!nm) return null;
+  if (!state.board.owners.includes(nm)) { state.board.owners.push(nm); saveBoard(); }
+  return nm;
+}
+function setBoardView(v) { state.board.boardView = v; saveBoard(); renderBoard(); }
+
+// ---- bug mutators (gated by caller to status In Progress/Testing + bug label) ----
+function addBug(taskId, title) {
+  const t = ntsTask(taskId); if (!t) return null;
+  if (!Array.isArray(t.bugs)) t.bugs = [];
+  const now = ntsNow();
+  const bug = { id: ntsId("b"), number: state.board.bugSeq++, title: (title || "").trim(), status: "Open", created: now, modified: now };
+  t.bugs.push(bug);
+  t.modified = now;
+  boardChanged();
+  return bug;
+}
+function updateBug(taskId, bugId, fields) {
+  const t = ntsTask(taskId); if (!t) return;
+  const bug = taskBugs(t).find(b => b.id === bugId); if (!bug) return;
+  Object.assign(bug, fields);
+  bug.modified = ntsNow();
+  t.modified = bug.modified;
+  boardChanged();
+}
+function removeBug(taskId, bugId) {
+  const t = ntsTask(taskId); if (!t) return;
+  if (!confirm("Delete this bug?")) return;
+  t.bugs = taskBugs(t).filter(b => b.id !== bugId);
+  t.modified = ntsNow();
+  boardChanged();
+}
+
+// ---- rendering ----
+function renderBoard() {
+  const root = $("board-view");
+  if (!state.board) { root.innerHTML = ""; return; }
+  root.innerHTML = boardToolbarHtml() + `<div id="nts-body" class="flex-1 min-h-0 overflow-auto"></div>`;
+  wireBoardToolbar();
+  const body = $("nts-body");
+  if (state.boardCode) renderBoardCode(body);
+  else if (_ntsDisplay === "table") renderBoardTable(body);
+  else if (_ntsDisplay === "bugs") renderBugsView(body);
+  else renderBoardColumns(body);
+}
+
+function boardToolbarHtml() {
+  const archivedCount = state.board.tasks.filter(t => t.archived).length;
+  const seg = active => active ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-100";
+  const gbtn = (id, v, label) => `<button id="${id}" class="px-3 py-1 text-xs ${v === 'status' ? '' : 'border-l border-slate-300'} ${seg(state.board.boardView === v)}">${label}</button>`;
+  const grouping = (!state.boardCode && _ntsDisplay === "board") ? `
+      <span class="text-xs text-slate-400">Group by</span>
+      <div class="inline-flex rounded border border-slate-300 overflow-hidden">
+        ${gbtn('nts-grp-status', 'status', 'Status')}${gbtn('nts-grp-category', 'category', 'Category')}${gbtn('nts-grp-owner', 'owner', 'Owner')}${gbtn('nts-grp-label', 'label', 'Label')}
+      </div>
+      ${state.board.boardView === 'status' ? `<button id="nts-add-status" class="px-3 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100">+ Status</button>` : ``}
+      ${state.board.boardView === 'category' ? `<button id="nts-add-category" class="px-3 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100">+ Category</button>` : ``}` : ``;
+  return `<div class="p-2 border-b border-slate-200 bg-white flex flex-wrap items-center gap-2">
+      <div class="inline-flex rounded border border-slate-300 overflow-hidden">
+        <button id="nts-disp-board" class="px-3 py-1 text-xs ${seg(_ntsDisplay === 'board' && !state.boardCode)}">Board</button>
+        <button id="nts-disp-table" class="px-3 py-1 text-xs border-l border-slate-300 ${seg(_ntsDisplay === 'table' && !state.boardCode)}">Table</button>
+        <button id="nts-disp-bugs" class="px-3 py-1 text-xs border-l border-slate-300 ${seg(_ntsDisplay === 'bugs' && !state.boardCode)}">&#128027; Bugs</button>
+      </div>
+      ${grouping}
+      <button id="nts-add-tag" class="px-3 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100">+ Tag</button>
+      <div class="ml-auto flex items-center gap-2">
+        <button id="nts-share" class="px-3 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100">&#128279; Share</button>
+        <button id="nts-archived" class="px-3 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100">&#128451; Archived (${archivedCount})</button>
+        <button id="nts-code" class="px-3 py-1 text-xs border rounded ${state.boardCode ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-300 hover:bg-slate-100'}">&lt;/&gt; Code</button>
+      </div>
+    </div>`;
+}
+
+function wireBoardToolbar() {
+  const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+  on("nts-disp-board", () => { state.boardCode = false; _ntsDisplay = "board"; renderBoard(); });
+  on("nts-disp-table", () => { state.boardCode = false; _ntsDisplay = "table"; renderBoard(); });
+  on("nts-disp-bugs", () => { state.boardCode = false; _ntsDisplay = "bugs"; renderBoard(); });
+  on("nts-grp-status", () => setBoardView("status"));
+  on("nts-grp-label", () => setBoardView("label"));
+  on("nts-grp-category", () => setBoardView("category"));
+  on("nts-grp-owner", () => setBoardView("owner"));
+  on("nts-add-status", addStatus);
+  on("nts-add-category", addCategory);
+  on("nts-add-tag", addLabel);
+  on("nts-archived", openArchivedModal);
+  on("nts-share", () => openShareModal(state.file.path));
+  on("nts-code", () => { state.boardCode = !state.boardCode; renderBoard(); });
+}
+
+function renderBoardColumns(body) {
+  const mode = state.board.boardView;   // status | label | category | owner
+  let columns;
+  if (mode === "label") {
+    columns = state.board.labels.map(lb => ({ key: lb.id, title: lb.name, color: lb.color }));
+    columns.push({ key: null, title: "Unlabeled", color: "#cbd5e1" });
+  } else if (mode === "category") {
+    columns = state.board.categories.map(c => ({ key: c.id, title: c.name + (c.bugs ? " \u{1F41B}" : "") }));
+    columns.push({ key: null, title: "Uncategorized" });
+  } else if (mode === "owner") {
+    columns = (state.board.owners || []).map(o => ({ key: o, title: o }));
+    columns.push({ key: null, title: "Unassigned" });
+  } else {
+    columns = state.board.statuses.map(s => ({ key: s.id, title: s.name, color: s.color, isStatus: true }));
+  }
+  const wrap = document.createElement("div");
+  wrap.className = "nts-columns flex gap-3 p-3 h-full items-start";
+  columns.forEach((col, i) => wrap.appendChild(renderColumn(col, i, columns.length, mode)));
+  body.innerHTML = "";
+  body.appendChild(wrap);
+}
+
+// Which task field a column key matches, per grouping mode.
+function taskInColumn(t, col, mode) {
+  if (mode === "label") return (t.labelId || null) === col.key;
+  if (mode === "category") return (t.categoryId || null) === col.key;
+  if (mode === "owner") return (t.owner || null) === col.key;
+  return t.statusId === col.key;
+}
+
+function renderColumn(col, idx, total, mode) {
+  const tasks = ntsActiveTasks()
+    .filter(t => taskInColumn(t, col, mode))
+    .sort(byPriority);   // high priority on top in every column
+  const el = document.createElement("div");
+  el.className = "nts-col bg-slate-100 rounded-lg flex flex-col max-h-full border border-slate-200";
+  const header = document.createElement("div");
+  header.className = "px-2.5 py-2 flex items-center gap-1 border-b border-slate-200";
+  const dot = col.color ? `<span class="inline-block w-2.5 h-2.5 rounded-full mr-1 shrink-0" style="background:${col.color}"></span>` : "";
+  header.innerHTML = `${dot}<span class="font-semibold text-slate-700 text-xs flex-1 truncate">${escapeHtml(col.title)}</span>
+      <span class="text-[10px] text-slate-400 bg-white rounded px-1.5">${tasks.length}</span>`;
+  if (col.isStatus) {
+    const ctrl = document.createElement("div");
+    ctrl.className = "flex items-center gap-0.5 ml-1";
+    ctrl.innerHTML = `
+      <button title="Move left" class="nts-c-left text-slate-400 hover:text-slate-700 px-0.5 ${idx === 0 ? 'opacity-30 pointer-events-none' : ''}">&#9664;</button>
+      <button title="Move right" class="nts-c-right text-slate-400 hover:text-slate-700 px-0.5 ${idx === total - 1 ? 'opacity-30 pointer-events-none' : ''}">&#9654;</button>
+      <button title="Rename status" class="nts-c-rename text-slate-400 hover:text-slate-700 px-0.5">&#9998;</button>
+      <button title="Delete status" class="nts-c-del text-slate-400 hover:text-red-600 px-0.5 text-base leading-none">&times;</button>`;
+    header.appendChild(ctrl);
+    ctrl.querySelector(".nts-c-left").onclick = () => moveStatus(col.key, -1);
+    ctrl.querySelector(".nts-c-right").onclick = () => moveStatus(col.key, 1);
+    ctrl.querySelector(".nts-c-rename").onclick = () => renameStatus(col.key);
+    ctrl.querySelector(".nts-c-del").onclick = () => deleteStatus(col.key);
+  }
+  el.appendChild(header);
+  const list = document.createElement("div");
+  list.className = "flex-1 overflow-y-auto p-2 space-y-2 min-h-[3rem]";
+  tasks.forEach(t => list.appendChild(renderCard(t)));
+  el.appendChild(list);
+  // A task needs a status, so the inline "+ Add task" is only offered in status grouping.
+  if (mode === "status") {
+    const add = document.createElement("button");
+    add.className = "mx-2 mb-2 px-2 py-1 text-xs text-slate-500 hover:bg-white rounded text-left";
+    add.textContent = "+ Add task";
+    add.onclick = () => openTaskModal(null, col.key);
+    el.appendChild(add);
+  }
+  setupColumnDrop(el, col, mode);
+  return el;
+}
+
+// A status pill: colored dot + status name.
+function statusChip(statusId) {
+  const s = ntsStatus(statusId);
+  if (!s) return "";
+  return `<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-slate-200 bg-white"><span class="inline-block w-2 h-2 rounded-full shrink-0" style="background:${s.color}"></span>${escapeHtml(s.name)}</span>`;
+}
+
+function renderCard(t) {
+  const card = document.createElement("div");
+  card.className = "nts-card bg-white rounded border border-slate-200 shadow-sm p-2 hover:border-blue-300";
+  card.draggable = true;
+  card.dataset.taskId = t.id;
+  const label = ntsLabel(t.labelId);
+  const labelChip = label ? `<span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded text-white" style="background:${label.color}">${escapeHtml(label.name)}</span>` : "";
+  const priNum = (Number.isFinite(t.priorityNumber) && t.priorityNumber) ? " · " + t.priorityNumber : "";
+  const pri = `<span class="text-[10px] px-1.5 py-0.5 rounded ${NTS_PRIORITY_CLASS[t.priority] || ''}">${escapeHtml(t.priority)}${priNum}</span>`;
+  const status = statusChip(t.statusId);
+  const bugCount = taskBugs(t).length;
+  const openBugs = taskBugs(t).filter(b => b.status !== "Closed" && b.status !== "Fixed").length;
+  const bugBadge = bugCount ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100" title="${openBugs} open / ${bugCount} total">&#128027; ${bugCount}</span>` : "";
+  const ck = taskChecklist(t);
+  const ckDone = ck.filter(c => c.done).length;
+  const ckBadge = ck.length ? `<span class="text-[10px] px-1.5 py-0.5 rounded border ${ckDone === ck.length ? 'bg-green-50 text-green-700 border-green-200' : 'bg-slate-50 text-slate-600 border-slate-200'}" title="${ckDone} of ${ck.length} completed"><span class="text-green-600 font-bold">&#10003;</span> ${ckDone}/${ck.length}</span>` : "";
+  const title = t.title || t.description || "(untitled task)";
+  const overdue = t.dueDate && !isTerminalStatus(t.statusId) && t.dueDate < new Date().toISOString().slice(0, 10);
+  const due = t.dueDate ? `<span class="text-[10px] ${overdue ? 'text-red-600 font-medium' : 'text-slate-500'}" title="Due date">&#128197; ${escapeHtml(t.dueDate)}</span>` : "";
+  const owner = t.owner ? `<span class="text-[10px] text-slate-500 flex items-center gap-1 min-w-0">
+      <span class="inline-block w-4 h-4 rounded-full bg-slate-200 text-slate-600 text-center leading-4 shrink-0">${escapeHtml((t.owner[0] || "").toUpperCase())}</span><span class="truncate">${escapeHtml(t.owner)}</span></span>` : "";
+  const meta = (due || owner) ? `<div class="flex items-center justify-between gap-2 mt-1">${owner || "<span></span>"}${due}</div>` : "";
+  card.innerHTML = `<div class="text-xs font-medium text-slate-800 mb-1 break-words">${escapeHtml(title)}</div>
+      <div class="flex flex-wrap items-center gap-1">${pri}${status}${labelChip}${bugBadge}${ckBadge}</div>${meta}`;
+  card.onclick = () => openTaskModal(t.id);
+  card.addEventListener("dragstart", e => { e.dataTransfer.setData("text/nts", t.id); e.dataTransfer.effectAllowed = "move"; card.classList.add("dragging"); });
+  card.addEventListener("dragend", () => card.classList.remove("dragging"));
+  return card;
+}
+
+function setupColumnDrop(el, col, mode) {
+  el.addEventListener("dragover", e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; el.classList.add("drop-target"); });
+  el.addEventListener("dragleave", e => { if (!el.contains(e.relatedTarget)) el.classList.remove("drop-target"); });
+  el.addEventListener("drop", e => {
+    e.preventDefault(); el.classList.remove("drop-target");
+    const id = e.dataTransfer.getData("text/nts"); if (!id) return;
+    if (mode === "label") setTaskLabel(id, col.key);
+    else if (mode === "category") setTaskCategory(id, col.key);
+    else if (mode === "owner") setTaskOwner(id, col.key);
+    else setTaskStatus(id, col.key);
+  });
+}
+
+function renderBoardTable(body) {
+  const all = ntsActiveTasks();
+  const owners = [...new Set([...(state.board.owners || []), ...all.map(t => t.owner).filter(Boolean)])].sort();
+  const f = _ntsFilter;
+  const statusOpts = `<option value="">All statuses</option>` + state.board.statuses.map(s => `<option value="${s.id}"${f.status === s.id ? ' selected' : ''}>${escapeHtml(s.name)}</option>`).join("");
+  const ownerOpts = `<option value="">All owners</option>` + owners.map(o => `<option value="${escapeHtml(o)}"${f.owner === o ? ' selected' : ''}>${escapeHtml(o)}</option>`).join("");
+  const rows = all
+    .filter(t => (!f.status || t.statusId === f.status) && (!f.owner || t.owner === f.owner))
+    .sort(byPriority);
+  const c = "border border-slate-200 px-2 py-1 align-top";
+  const cols = ["Title", "Status", "Category", "Owner", "Priority", "Pri #", "Label", "Start", "Due", "Modified"];
+  body.innerHTML = `<div class="p-3">
+      <div class="flex flex-wrap gap-2 mb-3 items-center">
+        <select id="nts-f-status" class="px-2 py-1 text-xs border border-slate-300 rounded bg-white">${statusOpts}</select>
+        <select id="nts-f-owner" class="px-2 py-1 text-xs border border-slate-300 rounded bg-white">${ownerOpts}</select>
+        <span class="text-xs text-slate-400">${rows.length} of ${all.length} tasks</span>
+      </div>
+      <table class="w-full text-xs border-collapse bg-white">
+        <thead><tr class="bg-slate-100">${cols.map(h => `<th class="${c} text-left font-semibold">${h}</th>`).join("")}</tr></thead>
+        <tbody>${rows.length ? rows.map(t => {
+          const lb = ntsLabel(t.labelId), cat = ntsCategory(t.categoryId);
+          return `<tr class="nts-row hover:bg-blue-50 cursor-pointer" data-task-id="${t.id}">
+            <td class="${c} font-medium">${escapeHtml(t.title || t.description || "(untitled)")}</td>
+            <td class="${c}">${statusChip(t.statusId)}</td>
+            <td class="${c}">${escapeHtml(cat ? cat.name : "—")}</td>
+            <td class="${c}">${escapeHtml(t.owner || "")}</td>
+            <td class="${c}"><span class="px-1.5 py-0.5 rounded ${NTS_PRIORITY_CLASS[t.priority] || ''}">${escapeHtml(t.priority)}</span></td>
+            <td class="${c}">${Number.isFinite(t.priorityNumber) ? t.priorityNumber : ""}</td>
+            <td class="${c}">${lb ? `<span class="px-1.5 py-0.5 rounded text-white" style="background:${lb.color}">${escapeHtml(lb.name)}</span>` : ""}</td>
+            <td class="${c}">${escapeHtml(t.startDate || "")}</td>
+            <td class="${c}">${escapeHtml(t.dueDate || "")}</td>
+            <td class="${c}">${escapeHtml(t.modified ? new Date(t.modified).toLocaleDateString() : "")}</td>
+          </tr>`;
+        }).join("") : `<tr><td class="${c} text-slate-400 text-center" colspan="${cols.length}">No tasks match these filters.</td></tr>`}</tbody>
+      </table>
+    </div>`;
+  $("nts-f-status").onchange = e => { _ntsFilter.status = e.target.value; renderBoard(); };
+  $("nts-f-owner").onchange = e => { _ntsFilter.owner = e.target.value; renderBoard(); };
+  body.querySelectorAll(".nts-row").forEach(r => r.onclick = () => openTaskModal(r.dataset.taskId));
+}
+
+// Cross-task Bugs view: every bug on the board, filterable by status / track.
+function renderBugsView(body) {
+  const all = ntsActiveTasks().flatMap(t => taskBugs(t).map(b => ({ bug: b, task: t })));
+  const f = _bugFilter;
+  const statusOpts = `<option value="">All bug statuses</option>` + BUG_STATUSES.map(s => `<option value="${s}"${f.status === s ? ' selected' : ''}>${s}</option>`).join("");
+  const taskStatusOpts = `<option value="">All task statuses</option>` + state.board.statuses.map(s => `<option value="${s.id}"${f.taskStatus === s.id ? ' selected' : ''}>${escapeHtml(s.name)}</option>`).join("");
+  const rows = all
+    .filter(r => (!f.status || r.bug.status === f.status) && (!f.taskStatus || r.task.statusId === f.taskStatus))
+    .sort((a, b) => b.bug.number - a.bug.number);
+  const c = "border border-slate-200 px-2 py-1 align-top";
+  body.innerHTML = `<div class="p-3">
+      <div class="flex flex-wrap gap-2 mb-3 items-center">
+        <select id="bug-f-status" class="px-2 py-1 text-xs border border-slate-300 rounded bg-white">${statusOpts}</select>
+        <select id="bug-f-taskstatus" class="px-2 py-1 text-xs border border-slate-300 rounded bg-white">${taskStatusOpts}</select>
+        <span class="text-xs text-slate-400">${rows.length} of ${all.length} bugs</span>
+      </div>
+      <table class="w-full text-xs border-collapse bg-white">
+        <thead><tr class="bg-slate-100">${["Bug #", "Status", "Title", "Task", "Task status", "Modified"].map(h => `<th class="${c} text-left font-semibold">${h}</th>`).join("")}</tr></thead>
+        <tbody>${rows.length ? rows.map(({ bug, task }) => {
+          return `<tr class="bug-row hover:bg-blue-50 cursor-pointer" data-task-id="${task.id}">
+            <td class="${c} font-mono font-medium">#${bug.number}</td>
+            <td class="${c}"><span class="px-1.5 py-0.5 rounded ${BUG_STATUS_CLASS[bug.status] || ''}">${escapeHtml(bug.status)}</span></td>
+            <td class="${c}">${escapeHtml(bug.title || "(no title)")}</td>
+            <td class="${c}">${escapeHtml(task.title || task.description || "(untitled)")}</td>
+            <td class="${c}">${statusChip(task.statusId)}</td>
+            <td class="${c}">${escapeHtml(bug.modified ? new Date(bug.modified).toLocaleDateString() : "")}</td>
+          </tr>`;
+        }).join("") : `<tr><td class="${c} text-slate-400 text-center" colspan="6">No bugs${all.length ? " match these filters" : " yet"}.</td></tr>`}</tbody>
+      </table>
+    </div>`;
+  $("bug-f-status").onchange = e => { _bugFilter.status = e.target.value; renderBoard(); };
+  $("bug-f-taskstatus").onchange = e => { _bugFilter.taskStatus = e.target.value; renderBoard(); };
+  body.querySelectorAll(".bug-row").forEach(r => r.onclick = () => openTaskModal(r.dataset.taskId));
+}
+
+// Raw-JSON editor. Edits are validated on Save and only replace state.board when
+// valid — so the rendered board is never impacted by a malformed edit.
+function renderBoardCode(body) {
+  const json = JSON.stringify(state.board, null, 2);
+  body.innerHTML = `<div class="h-full flex flex-col p-3 gap-2">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="text-xs text-slate-500">Raw JSON — validated before it replaces the board.</span>
+        <span id="nts-code-err" class="text-xs text-red-600"></span>
+        <div class="ml-auto flex gap-2">
+          <button id="nts-code-cancel" class="px-3 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100">Cancel</button>
+          <button id="nts-code-save" class="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">Save JSON</button>
+        </div>
+      </div>
+      <textarea id="nts-code-ta" spellcheck="false" class="flex-1 w-full p-3 font-mono text-[12px] border border-slate-300 rounded outline-none resize-none">${escapeHtml(json)}</textarea>
+    </div>`;
+  const ta = $("nts-code-ta"), err = $("nts-code-err");
+  ta.addEventListener("input", () => {
+    try { JSON.parse(ta.value); err.textContent = ""; ta.classList.remove("border-red-400"); }
+    catch (e) { err.textContent = "Invalid JSON: " + e.message; ta.classList.add("border-red-400"); }
+  });
+  $("nts-code-cancel").onclick = () => { state.boardCode = false; renderBoard(); };
+  $("nts-code-save").onclick = () => {
+    let parsed;
+    try { parsed = JSON.parse(ta.value); }
+    catch (e) { err.textContent = "Invalid JSON — not saved: " + e.message; toast("Invalid JSON — board unchanged"); return; }
+    state.board = loadBoard(JSON.stringify(parsed));   // normalize, keeping the UI consistent
+    state.boardCode = false;
+    saveBoard();
+    renderBoard();
+    toast("Board updated");
+  };
+}
+
+// ---- modals ----
+function ntsOverlay() {
+  const overlay = document.createElement("div");
+  overlay.className = "fixed inset-0 bg-black/40 z-50 flex items-center justify-center";
+  overlay.addEventListener("mousedown", e => { if (e.target === overlay) overlay.remove(); });
+  return overlay;
+}
+
+// Editable shareable URL for a .nts board — opens the board directly in the app.
+function boardShareUrl(path) {
+  return `${location.origin}/?path=${encodeURIComponent(path)}`;
+}
+
+function openShareModal(path) {
+  const url = boardShareUrl(path);
+  const overlay = ntsOverlay();
+  const close = () => overlay.remove();
+  overlay.innerHTML = `<div class="bg-white dark:bg-ink-side rounded-lg shadow-xl w-full max-w-lg mx-4 p-5">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="font-semibold text-base">Share board</h2>
+        <button class="sh-x text-slate-400 dark:text-ink-dim hover:text-slate-600 dark:hover:text-ink-fg text-2xl leading-none">&times;</button>
+      </div>
+      <p class="text-xs text-slate-500 dark:text-ink-dim mb-3">Anyone on your network can open and <strong>edit</strong> this board at the link below. Edits save back to the same file.</p>
+      <div class="flex gap-2">
+        <input id="sh-url" readonly class="flex-1 px-2 py-1.5 border border-slate-300 dark:border-ink-border rounded bg-slate-50 dark:bg-ink-bg font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" value="${escapeHtml(url)}">
+        <button id="sh-copy" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded whitespace-nowrap">Copy</button>
+      </div>
+      <div class="mt-3 text-right">
+        <a id="sh-open" href="${escapeHtml(url)}" target="_blank" rel="noopener" class="text-blue-600 dark:text-blue-400 hover:underline text-xs">Open in new tab &#8599;</a>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector(".sh-x").onclick = close;
+  const input = overlay.querySelector("#sh-url");
+  overlay.querySelector("#sh-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText(url); toast("Link copied"); }
+    catch { input.select(); document.execCommand("copy"); toast("Link copied"); }
+  };
+  input.focus(); input.select();
+}
+
+function openTaskModal(taskId, statusId, prefill) {
+  const isNew = !taskId;
+  const t = isNew ? null : ntsTask(taskId);
+  if (!isNew && !t) return;
+  const pf = prefill || {};
+  const firstCat = state.board.categories[0] && state.board.categories[0].id || null;
+  const firstStatus = state.board.statuses[0] && state.board.statuses[0].id || null;
+  const cur = t || { title: "", description: "", owner: pf.owner || "", startDate: "", dueDate: "",
+    priority: pf.priority || "Medium", priorityNumber: Number.isFinite(pf.priorityNumber) ? pf.priorityNumber : 0,
+    statusId: statusId || pf.statusId || firstStatus, labelId: pf.labelId || null,
+    categoryId: pf.categoryId || firstCat, comments: [] };
+  const pending = [];
+  const overlay = ntsOverlay();
+  const close = () => overlay.remove();
+
+  const ownerList = [...new Set([...(state.board.owners || []), cur.owner].filter(Boolean))];
+  const ownerOptions = `<option value="">— unassigned —</option>` + ownerList.map(o => `<option value="${escapeHtml(o)}"${cur.owner === o ? ' selected' : ''}>${escapeHtml(o)}</option>`).join("");
+  const selStatusId = cur.statusId || firstStatus;
+  const statusOptions = state.board.statuses.map(s => `<option value="${s.id}"${selStatusId === s.id ? ' selected' : ''}>${escapeHtml(s.name)}${s.allowBugs ? ' \u{1F41B}' : ''}</option>`).join("");
+  const priorityOptions = NTS_PRIORITIES.map(p => `<option value="${p}"${cur.priority === p ? ' selected' : ''}>${p}</option>`).join("");
+  const labelOptions = `<option value="">— none —</option>` + state.board.labels.map(lb => `<option value="${lb.id}"${cur.labelId === lb.id ? ' selected' : ''}>${escapeHtml(lb.name)}</option>`).join("");
+  const curCat = cur.categoryId || firstCat;
+  const categoryOptions = state.board.categories.map(c => `<option value="${c.id}"${curCat === c.id ? ' selected' : ''}>${escapeHtml(c.name)}${c.bugs ? ' \u{1F41B}' : ''}</option>`).join("");
+  const fld = "w-full px-2 py-1.5 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500";
+  const lbl = "block text-xs font-medium text-slate-500 mb-1";
+
+  overlay.innerHTML = `<div class="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 my-6 flex flex-col" style="max-height:90vh">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-slate-200">
+        <h2 class="font-semibold text-base">${isNew ? 'New Task' : 'Edit Task'}</h2>
+        <button class="nts-x text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+      </div>
+      <div class="p-5 overflow-y-auto space-y-3 text-sm">
+        <div><label class="${lbl}">Title</label><input id="tm-title" class="${fld}" value="${escapeHtml(cur.title)}"></div>
+        <div><label class="${lbl}">Description</label><textarea id="tm-desc" rows="3" class="${fld} resize-y">${escapeHtml(cur.description)}</textarea></div>
+        <div class="grid grid-cols-2 gap-3">
+          <div><label class="${lbl}">Owner</label>
+            <div class="flex gap-2">
+              <select id="tm-owner" class="${fld} bg-white">${ownerOptions}</select>
+              <button id="tm-owner-add" type="button" class="px-2.5 py-1.5 text-xs border border-slate-300 rounded hover:bg-slate-100 whitespace-nowrap">+ Add</button>
+            </div></div>
+          <div><label class="${lbl}">Category <span class="text-red-500">*</span></label>
+            <div class="flex gap-2">
+              <select id="tm-category" class="${fld} bg-white">${categoryOptions}</select>
+              <button id="tm-category-add" type="button" class="px-2.5 py-1.5 text-xs border border-slate-300 rounded hover:bg-slate-100 whitespace-nowrap">+ Add</button>
+            </div></div>
+          <div><label class="${lbl}">Status <span class="text-red-500">*</span></label>
+            <div class="flex gap-2">
+              <select id="tm-status" class="${fld} bg-white">${statusOptions}</select>
+              <button id="tm-status-add" type="button" class="px-2.5 py-1.5 text-xs border border-slate-300 rounded hover:bg-slate-100 whitespace-nowrap">+ Add</button>
+            </div></div>
+          <div><label class="${lbl}">Start Date</label><input id="tm-start" type="date" class="${fld}" value="${escapeHtml(cur.startDate)}"></div>
+          <div><label class="${lbl}">Due Date <span class="text-red-500">*</span></label><input id="tm-due" type="date" class="${fld}" value="${escapeHtml(cur.dueDate || '')}"></div>
+          <div><label class="${lbl}">Priority</label><select id="tm-priority" class="${fld} bg-white">${priorityOptions}</select></div>
+          <div><label class="${lbl}">Priority Number</label><input id="tm-prinum" type="number" class="${fld}" value="${Number.isFinite(cur.priorityNumber) ? cur.priorityNumber : 0}"></div>
+          <div><label class="${lbl}">Label (Tag)</label><select id="tm-label" class="${fld} bg-white">${labelOptions}</select></div>
+          <div class="text-[11px] text-slate-400 self-end leading-snug">${isNew ? 'New task — not yet saved' :
+            `Created: ${escapeHtml(new Date(cur.created).toLocaleString())}<br>Modified: ${escapeHtml(new Date(cur.modified).toLocaleString())}`}</div>
+        </div>
+        <div id="tm-checklist-wrap"></div>
+        <div id="tm-bugs-wrap"></div>
+        <div>
+          <label class="${lbl}">Comments</label>
+          <div id="tm-comments" class="space-y-1 mb-2"></div>
+          <div class="relative flex gap-2">
+            <input id="tm-comment-new" class="${fld}" placeholder="Add a comment… (type @ to reference a bug)" autocomplete="off">
+            <button id="tm-comment-add" class="px-3 py-1.5 text-xs border border-slate-300 rounded hover:bg-slate-100 whitespace-nowrap">Add</button>
+            <div id="tm-bug-ac" class="dropdown absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded shadow-lg w-72 max-h-48 overflow-y-auto z-10"></div>
+          </div>
+        </div>
+      </div>
+      <div class="px-5 py-3 border-t border-slate-200 flex items-center gap-2">
+        ${isNew ? '' : `<button id="tm-archive" class="px-3 py-1.5 text-xs border border-amber-300 text-amber-700 rounded hover:bg-amber-50">Archive</button>`}
+        <div class="ml-auto flex gap-2">
+          <button class="nts-x px-3 py-1.5 border border-slate-300 rounded hover:bg-slate-100">Cancel</button>
+          ${isNew ? `<button id="tm-save-next" class="px-4 py-1.5 border border-blue-600 text-blue-700 rounded hover:bg-blue-50">Create &amp; next</button>` : ''}
+          <button id="tm-save" class="px-4 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700">${isNew ? 'Create' : 'Save'}</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  // Render comment text, turning @<number> into a chip when it matches a bug on this task.
+  const commentHtml = (text) => {
+    const bugs = isNew ? [] : taskBugs(t);
+    return escapeHtml(text).replace(/@(\d+)/g, (m, n) => {
+      const bug = bugs.find(b => String(b.number) === n);
+      if (!bug) return m;
+      return `<span class="text-blue-700 bg-blue-50 rounded px-1 font-medium" title="${escapeHtml(bug.title || 'bug #' + n)} — ${escapeHtml(bug.status)}">@${n}</span>`;
+    });
+  };
+  const renderComments = () => {
+    const list = [...(cur.comments || []), ...pending];
+    overlay.querySelector("#tm-comments").innerHTML = list.length
+      ? list.map(cm => `<div class="text-xs bg-slate-50 border border-slate-200 rounded px-2 py-1">
+            <div class="text-slate-700 whitespace-pre-wrap break-words">${commentHtml(cm.text)}</div>
+            <div class="text-[10px] text-slate-400 mt-0.5">${escapeHtml(new Date(cm.created).toLocaleString())}</div></div>`).join("")
+      : `<div class="text-xs text-slate-400">No comments yet.</div>`;
+  };
+  renderComments();
+
+  // --- Checklist: simple completable items; applied on Save. ---
+  const checklist = (cur.checklist || []).map(c => ({ ...c }));   // clone so Cancel discards edits
+  const ckWrap = overlay.querySelector("#tm-checklist-wrap");
+  function renderChecklist() {
+    const done = checklist.filter(c => c.done).length;
+    const items = checklist.map((c, i) => `
+        <div class="flex items-center gap-2 py-0.5">
+          <input type="checkbox" data-i="${i}" class="ck-done w-4 h-4 accent-green-600" ${c.done ? 'checked' : ''}>
+          <input data-i="${i}" class="ck-text flex-1 px-1.5 py-0.5 text-xs border border-slate-200 rounded ${c.done ? 'line-through text-slate-400' : ''}" value="${escapeHtml(c.text)}" placeholder="Checklist item">
+          <button data-i="${i}" class="ck-del text-slate-400 hover:text-red-600 text-base leading-none px-1" title="Remove">&times;</button>
+        </div>`).join("");
+    ckWrap.innerHTML = `<div>
+        <label class="${lbl}"><span class="text-green-600 font-bold">&#10003;</span> Checklist ${checklist.length ? `<span class="text-slate-400 font-normal">(${done} of ${checklist.length} completed)</span>` : ''}</label>
+        <div>${checklist.length ? items : '<div class="text-xs text-slate-400">No items yet.</div>'}</div>
+        <div class="flex gap-2 mt-1">
+          <input id="ck-new" class="flex-1 px-1.5 py-1 text-xs border border-slate-300 rounded" placeholder="Add checklist item…">
+          <button id="ck-add" class="px-3 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100 whitespace-nowrap">+ Item</button>
+        </div>
+      </div>`;
+    ckWrap.querySelectorAll(".ck-done").forEach(cb => cb.onchange = () => { checklist[cb.dataset.i].done = cb.checked; renderChecklist(); });
+    ckWrap.querySelectorAll(".ck-text").forEach(inp => inp.onchange = () => { checklist[inp.dataset.i].text = inp.value; });
+    ckWrap.querySelectorAll(".ck-del").forEach(btn => btn.onclick = () => { checklist.splice(+btn.dataset.i, 1); renderChecklist(); });
+    const addItem = () => {
+      const inp = ckWrap.querySelector("#ck-new");
+      const txt = inp.value.trim(); if (!txt) return;
+      checklist.push({ id: ntsId("ck"), text: txt, done: false });
+      renderChecklist();
+      ckWrap.querySelector("#ck-new").focus();
+    };
+    ckWrap.querySelector("#ck-add").onclick = addItem;
+    ckWrap.querySelector("#ck-new").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addItem(); } });
+  }
+  renderChecklist();
+
+  // --- Bugs section: visible only for categories with bug management enabled,
+  //     editable only while the task's status allows bug editing. ---
+  const bugsWrap = overlay.querySelector("#tm-bugs-wrap");
+  const curCategoryId = () => overlay.querySelector("#tm-category").value || null;
+  const curStatusId = () => overlay.querySelector("#tm-status").value || null;
+  function renderBugsSection() {
+    if (isNew || !categoryAllowsBugs(curCategoryId())) {
+      bugsWrap.innerHTML = isNew && categoryAllowsBugs(curCategoryId())
+        ? '<div class="text-[11px] text-slate-400 border border-dashed border-slate-200 rounded p-2">Save the task first to add bugs.</div>' : "";
+      return;
+    }
+    const editable = statusAllowsBugEdit(curStatusId());
+    const bugs = taskBugs(t).slice().sort((a, b) => a.number - b.number);
+    const rows = bugs.map(b => `
+        <div class="flex items-center gap-2 py-1 border-b border-slate-100 last:border-0">
+          <span class="font-mono text-[11px] text-slate-500 w-8 shrink-0">#${b.number}</span>
+          <input data-bug="${b.id}" class="bug-title flex-1 px-1.5 py-0.5 text-xs border border-slate-200 rounded" value="${escapeHtml(b.title)}" placeholder="Bug title" ${editable ? '' : 'readonly'}>
+          <select data-bug="${b.id}" class="bug-status text-[11px] px-1 py-0.5 border border-slate-300 rounded bg-white" ${editable ? '' : 'disabled'}>${BUG_STATUSES.map(s => `<option value="${s}"${b.status === s ? ' selected' : ''}>${s}</option>`).join("")}</select>
+          ${editable ? `<button data-bug="${b.id}" class="bug-del text-slate-400 hover:text-red-600 text-base leading-none px-1" title="Delete bug">&times;</button>` : ''}
+        </div>`).join("");
+    bugsWrap.innerHTML = `<div class="border border-slate-200 rounded p-3 bg-slate-50">
+        <div class="flex items-center gap-2 mb-2">
+          <label class="text-xs font-semibold text-slate-600">&#128027; Bugs (${bugs.length})</label>
+          ${editable ? '' : '<span class="text-[11px] text-amber-600">Move to a bug-enabled status (\u{1F41B}) to add/edit bugs.</span>'}
+        </div>
+        <div>${bugs.length ? rows : '<div class="text-xs text-slate-400">No bugs yet.</div>'}</div>
+        ${editable ? `<div class="flex gap-2 mt-2">
+          <input id="tm-bug-new" class="flex-1 px-1.5 py-1 text-xs border border-slate-300 rounded" placeholder="New bug title…">
+          <button id="tm-bug-add" class="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 whitespace-nowrap">+ Bug</button>
+        </div>` : ''}
+      </div>`;
+    if (editable) {
+      const addBugInline = () => {
+        const inp = overlay.querySelector("#tm-bug-new");
+        const title = inp.value.trim(); if (!title) return;
+        addBug(t.id, title);          // persists immediately + re-renders the board behind the modal
+        inp.value = "";
+        renderBugsSection();
+        renderComments();             // newly-numbered bug is now referenceable via @
+      };
+      overlay.querySelector("#tm-bug-add").onclick = addBugInline;
+      overlay.querySelector("#tm-bug-new").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addBugInline(); } });
+      bugsWrap.querySelectorAll(".bug-title").forEach(inp => inp.onchange = () => updateBug(t.id, inp.dataset.bug, { title: inp.value.trim() }));
+      bugsWrap.querySelectorAll(".bug-status").forEach(sel => sel.onchange = () => { updateBug(t.id, sel.dataset.bug, { status: sel.value }); renderComments(); });
+      bugsWrap.querySelectorAll(".bug-del").forEach(btn => btn.onclick = () => { removeBug(t.id, btn.dataset.bug); renderBugsSection(); renderComments(); });
+    }
+  }
+  renderBugsSection();
+
+  // Bug visibility/editability depends on the live Status and Category selections.
+  overlay.querySelector("#tm-status").addEventListener("change", renderBugsSection);
+  overlay.querySelector("#tm-category").addEventListener("change", renderBugsSection);
+
+  // @-autocomplete for referencing this task's bugs inside a comment.
+  const acBox = overlay.querySelector("#tm-bug-ac");
+  const commentInp = overlay.querySelector("#tm-comment-new");
+  const hideAc = () => acBox.classList.remove("show");
+  const showBugAc = () => {
+    if (isNew) return hideAc();
+    const caret = commentInp.selectionStart;
+    const before = commentInp.value.slice(0, caret);
+    const m = before.match(/@(\d*)$/);
+    if (!m) return hideAc();
+    const q = m[1];
+    const bugs = taskBugs(t).filter(b => !q || String(b.number).startsWith(q)).sort((a, b) => a.number - b.number);
+    if (!bugs.length) return hideAc();
+    acBox.innerHTML = bugs.slice(0, 8).map(b => `<div class="bug-ac-item px-2 py-1 text-xs hover:bg-blue-50 cursor-pointer flex items-center gap-1" data-num="${b.number}">
+        <span class="font-mono text-slate-500">@${b.number}</span><span class="flex-1 truncate">${escapeHtml(b.title || '(no title)')}</span>
+        <span class="px-1 rounded ${BUG_STATUS_CLASS[b.status] || ''}">${escapeHtml(b.status)}</span></div>`).join("");
+    acBox.classList.add("show");
+    acBox.querySelectorAll(".bug-ac-item").forEach(it => it.onmousedown = e => {
+      e.preventDefault();
+      const rest = commentInp.value.slice(caret);
+      const newBefore = before.replace(/@(\d*)$/, "@" + it.dataset.num + " ");
+      commentInp.value = newBefore + rest;
+      commentInp.setSelectionRange(newBefore.length, newBefore.length);
+      hideAc(); commentInp.focus();
+    });
+  };
+  commentInp.addEventListener("input", showBugAc);
+  commentInp.addEventListener("keyup", e => { if (e.key === "Escape") hideAc(); });
+  commentInp.addEventListener("blur", () => setTimeout(hideAc, 150));
+
+  overlay.querySelectorAll(".nts-x").forEach(b => b.onclick = close);
+  const addComment = () => {
+    const inp = overlay.querySelector("#tm-comment-new");
+    const txt = inp.value.trim(); if (!txt) return;
+    pending.push({ id: ntsId("c"), text: txt, created: ntsNow() });
+    inp.value = ""; renderComments();
+  };
+  overlay.querySelector("#tm-comment-add").onclick = addComment;
+  overlay.querySelector("#tm-comment-new").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addComment(); } });
+  overlay.querySelector("#tm-owner-add").onclick = () => {
+    const nm = addOwner();              // persists the new owner to the board's owner list
+    if (!nm) return;
+    const sel = overlay.querySelector("#tm-owner");
+    if (![...sel.options].some(o => o.value === nm)) sel.add(new Option(nm, nm));
+    sel.value = nm;
+  };
+  overlay.querySelector("#tm-category-add").onclick = () => {
+    const cat = addCategory();          // prompts for name + whether bugs are managed
+    if (!cat) return;
+    const sel = overlay.querySelector("#tm-category");
+    sel.add(new Option(cat.name + (cat.bugs ? " \u{1F41B}" : ""), cat.id));
+    sel.value = cat.id;
+    renderBugsSection();                // bug visibility may now change
+  };
+  overlay.querySelector("#tm-status-add").onclick = () => {
+    const st = addStatus();             // prompts for name + whether bugs are editable
+    if (!st) return;
+    const sel = overlay.querySelector("#tm-status");
+    sel.add(new Option(st.name + (st.allowBugs ? " \u{1F41B}" : ""), st.id));
+    sel.value = st.id;
+    renderBugsSection();                // bug editability may now change
+  };
+  const archiveBtn = overlay.querySelector("#tm-archive");
+  if (archiveBtn) archiveBtn.onclick = () => { close(); archiveTask(t.id); };
+
+  // Commit the form. When `next` is true (new tasks only), immediately reopen a
+  // fresh creation modal in the same lane, carrying Owner / Label / Priority over.
+  const commit = (next) => {
+    const g = sel => overlay.querySelector(sel);
+    const data = {
+      title: g("#tm-title").value.trim(),
+      description: g("#tm-desc").value,
+      owner: g("#tm-owner").value.trim(),
+      startDate: g("#tm-start").value,
+      dueDate: g("#tm-due").value,
+      statusId: g("#tm-status").value || null,
+      categoryId: g("#tm-category").value || null,
+      priority: g("#tm-priority").value,
+      priorityNumber: parseInt(g("#tm-prinum").value, 10) || 0,
+      labelId: g("#tm-label").value || null,
+      checklist: checklist.map(c => ({ id: c.id, text: c.text.trim(), done: !!c.done })).filter(c => c.text),
+    };
+    // Required fields.
+    if (!data.statusId) { toast("Status is required"); g("#tm-status").focus(); return; }
+    if (!data.categoryId) { toast("Category is required"); g("#tm-category").focus(); return; }
+    if (!data.dueDate) { toast("Due Date is required"); g("#tm-due").focus(); return; }
+    if (isNew) {
+      const now = ntsNow();
+      const order = ntsActiveTasks().filter(x => x.statusId === data.statusId).length;
+      state.board.tasks.push({ id: ntsId("t"), ...data, created: now, modified: now, comments: pending.slice(), archived: false, archivedAt: null, bugs: [], order });
+    } else {
+      Object.assign(t, data);
+      if (pending.length) t.comments = [...(t.comments || []), ...pending];
+      t.modified = ntsNow();
+    }
+    close();
+    boardChanged();
+    if (next) openTaskModal(null, data.statusId, { owner: data.owner, labelId: data.labelId, priority: data.priority, priorityNumber: data.priorityNumber, categoryId: data.categoryId });
+  };
+
+  overlay.querySelector("#tm-save").onclick = () => commit(false);
+  const nextBtn = overlay.querySelector("#tm-save-next");
+  if (nextBtn) nextBtn.onclick = () => commit(true);
+}
+
+function openArchivedModal() {
+  const archived = state.board.tasks.filter(t => t.archived)
+    .sort((a, b) => (b.archivedAt || "").localeCompare(a.archivedAt || ""));
+  const overlay = ntsOverlay();
+  const close = () => overlay.remove();
+  const c = "border border-slate-200 px-2 py-1 text-left align-top";
+  overlay.innerHTML = `<div class="bg-white rounded-lg shadow-xl w-full max-w-3xl mx-4 my-6 flex flex-col" style="max-height:85vh">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-slate-200">
+        <h2 class="font-semibold text-base">Archived Tasks (${archived.length})</h2>
+        <button class="nts-x text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+      </div>
+      <div class="p-5 overflow-y-auto">${archived.length ? `<table class="w-full text-xs border-collapse">
+        <thead><tr class="bg-slate-100">${["Title", "Owner", "Status", "Archived at", "Restore to", ""].map(h => `<th class="${c} font-semibold">${h}</th>`).join("")}</tr></thead>
+        <tbody>${archived.map(t => `<tr>
+          <td class="${c} font-medium">${escapeHtml(t.title || t.description || "(untitled)")}</td>
+          <td class="${c}">${escapeHtml(t.owner || "")}</td>
+          <td class="${c}">${statusChip(t.statusId)}</td>
+          <td class="${c}">${escapeHtml(t.archivedAt ? new Date(t.archivedAt).toLocaleString() : "")}</td>
+          <td class="${c}"><select data-task-id="${t.id}" class="nts-restore-status px-1.5 py-1 text-xs border border-slate-300 rounded bg-white">${state.board.statuses.map(s => `<option value="${s.id}"${t.statusId === s.id ? ' selected' : ''}>${escapeHtml(s.name)}</option>`).join("")}</select></td>
+          <td class="${c}"><button data-task-id="${t.id}" class="nts-restore px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">Restore</button></td>
+        </tr>`).join("")}</tbody></table>` : `<div class="text-slate-400 text-sm">No archived tasks.</div>`}</div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelectorAll(".nts-x").forEach(b => b.onclick = close);
+  overlay.querySelectorAll(".nts-restore").forEach(b => b.onclick = () => {
+    const id = b.dataset.taskId;
+    const sel = overlay.querySelector(`.nts-restore-status[data-task-id="${id}"]`);
+    close();
+    restoreTask(id, sel ? sel.value : null);
+    if (state.board.tasks.some(x => x.archived)) openArchivedModal();
+  });
+}
 </script>
 </body>
 </html>

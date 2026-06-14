@@ -4,6 +4,7 @@ import hmac
 import json
 import mimetypes
 import os
+import re
 import secrets
 import shutil
 import sys
@@ -24,11 +25,19 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
 
+import backup
+
 ROOT = Path(os.environ.get("FILEPEEK_ROOT", str(Path.home()))).expanduser().resolve()
 STATIC_DIR = Path(__file__).parent / "static"
 STATE_DIR = Path(os.environ.get("FILEPEEK_STATE_DIR", str(Path(__file__).parent))).expanduser().resolve()
 PERMLINKS_FILE = STATE_DIR / "permlinks.json"
 BOOKMARKS_FILE = STATE_DIR / "bookmarks.json"
+
+# --- Backup configuration --------------------------------------------------
+BACKUP_CONFIG_FILE = STATE_DIR / "backup_config.json"
+BACKUP_LOG_FILE = STATE_DIR / "backup.log"
+BACKUP_LOG_MAX_BYTES = 256 * 1024  # rotate the backup log past this size
+BACKUP_FREQUENCIES = {5, 15, 60, 1440}  # minutes; 1440 = daily
 HTML_EXTS = {".html", ".htm"}
 MD_EXTS = {".md", ".markdown"}
 PERMLINK_EXTS = HTML_EXTS | MD_EXTS  # file types that can be perma-linked / rendered at /view
@@ -41,7 +50,7 @@ TEXT_EXTS = {
     ".csv", ".tsv", ".sql", ".go", ".rs", ".java", ".kt", ".c", ".h",
     ".cpp", ".hpp", ".cs", ".rb", ".php", ".pl", ".lua", ".r", ".swift",
     ".vue", ".dart", ".gradle", ".properties", ".gitignore", ".dockerfile",
-    ".tf", ".hcl", ".proto", ".mmd", ".mermaid",
+    ".tf", ".hcl", ".proto", ".mmd", ".mermaid", ".nts",
 }
 SHEET_EXTS = {".xlsx", ".xlsm"}
 DOC_EXTS = {".docx"}
@@ -149,11 +158,27 @@ async def cap_request_size(request, call_next):
     return await call_next(request)
 
 
+@app.exception_handler(backup.BackupError)
+async def backup_error_handler(request: Request, exc: backup.BackupError):
+    return JSONResponse({"detail": str(exc)}, status_code=400)
+
+
+def _is_state_path(p: Path) -> bool:
+    """True if p is the state dir or inside it. State files (permlinks,
+    backup config, logs) must never be servable, even when STATE_DIR
+    sits under ROOT."""
+    if STATE_DIR == ROOT:
+        return False  # misconfiguration; blocking every path would be worse
+    return p == STATE_DIR or STATE_DIR in p.parents
+
+
 def safe_path(rel: str) -> Path:
     rel = (rel or "").lstrip("/")
     resolved = (ROOT / rel).resolve()
     if resolved != ROOT and ROOT not in resolved.parents:
         raise HTTPException(status_code=403, detail="Path outside root")
+    if _is_state_path(resolved):
+        raise HTTPException(status_code=403, detail="Path is reserved for filepeek state")
     return resolved
 
 
@@ -438,6 +463,8 @@ def list_dir(path: str = "", sort: str = "name"):
 
     entries = []
     for child in target.iterdir():
+        if _is_state_path(child):
+            continue
         try:
             entries.append(file_info(child))
         except OSError:
@@ -707,6 +734,7 @@ def start_zip(body: ZipBody):
 
     files, total_bytes = [], 0
     for dirpath, dirnames, filenames in os.walk(target):
+        dirnames[:] = [d for d in dirnames if not _is_state_path(Path(dirpath) / d)]
         for name in filenames:
             fp = Path(dirpath) / name
             if fp.is_symlink():
@@ -827,7 +855,8 @@ def raw_file(path: str):
 def _walk_files(root: Path):
     skip = {".git", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", "dist", "build"}
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in skip and not d.startswith(".")]
+        dirnames[:] = [d for d in dirnames if d not in skip and not d.startswith(".")
+                       and not _is_state_path(Path(dirpath) / d)]
         for name in filenames:
             yield Path(dirpath) / name
 
@@ -876,6 +905,20 @@ def search_content(q: str = Query(..., min_length=2), limit: int = 50):
         except OSError:
             continue
     return {"matches": matches}
+
+
+@app.get("/api/nts")
+def list_nts(limit: int = 500):
+    """List every .nts (Tracks board) file under the root, most-recently-modified first."""
+    items = []
+    for fp in _walk_files(ROOT):
+        if fp.suffix.lower() == ".nts":
+            try:
+                items.append(file_info(fp))
+            except OSError:
+                continue
+    items.sort(key=lambda e: -e["modified_ts"])
+    return {"tracks": items[:limit]}
 
 
 def _load_permlinks() -> list:
@@ -965,6 +1008,306 @@ def delete_bookmark(path: str):
     marks = [m for m in _load_bookmarks() if m["path"] != rel]
     _save_bookmarks(marks)
     return {"ok": True}
+
+
+# --- Backup -----------------------------------------------------------------
+
+DEFAULT_BACKUP_CONFIG = {
+    "enabled": False,
+    "type": None,            # "local" | "s3"
+    "destination": "",       # local path (type=local)
+    "s3": None,              # {bucket, prefix, endpoint, region, access_key_id, secret_access_key}
+    "sources": [],           # folders (relative to ROOT) to back up; [] = the whole root
+    "frequency_minutes": 15,
+    "mode": "copy",          # "copy" (safe) | "sync" (mirror)
+    "last_run": None,
+    "last_status": None,     # "success" | "failed"
+    "last_message": None,
+    "files_copied": 0,
+    "bytes_copied": 0,
+}
+
+
+def _load_backup_config() -> dict:
+    cfg = dict(DEFAULT_BACKUP_CONFIG)
+    if BACKUP_CONFIG_FILE.exists():
+        try:
+            cfg.update(json.loads(BACKUP_CONFIG_FILE.read_text()))
+        except (OSError, ValueError):
+            pass
+    return cfg
+
+
+def _save_backup_config(cfg: dict) -> None:
+    BACKUP_CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
+    try:
+        os.chmod(BACKUP_CONFIG_FILE, 0o600)  # the S3 secret lives here
+    except OSError:
+        pass
+
+
+def _backup_dest_label(cfg: dict) -> str:
+    if cfg["type"] == "s3" and cfg.get("s3"):
+        s = cfg["s3"]
+        return f"s3://{s['bucket']}/{s.get('prefix', '')}".rstrip("/")
+    return cfg.get("destination") or ""
+
+
+def _append_backup_log(message: str) -> None:
+    stamp = datetime.now().isoformat(timespec="seconds")
+    try:
+        if BACKUP_LOG_FILE.exists() and BACKUP_LOG_FILE.stat().st_size > BACKUP_LOG_MAX_BYTES:
+            tail = BACKUP_LOG_FILE.read_text(errors="replace")[-(BACKUP_LOG_MAX_BYTES // 2):]
+            BACKUP_LOG_FILE.write_text(tail)
+        with BACKUP_LOG_FILE.open("a") as f:
+            f.write(f"[{stamp}] {message}\n")
+    except OSError:
+        pass
+
+
+# One backup at a time, ever. This lock guards both the scheduled worker and the
+# manual "Backup now" button, so two backups never run on the source at once.
+_backup_lock = threading.Lock()
+BACKUP_RUN = {"running": False, "job_id": None, "op": None, "progress": "", "started": None}
+
+
+def _backup_excludes() -> list:
+    return backup.build_excludes(ROOT, STATE_DIR)
+
+
+def _run_backup_job(cfg: dict) -> dict:
+    """Dispatch a backup to the right engine. Returns {files, bytes}."""
+    excludes = _backup_excludes()
+    cb = lambda s: BACKUP_RUN.update(progress=s)
+    if cfg["type"] == "s3":
+        return backup.run_s3_backup(ROOT, cfg.get("sources", []), cfg["s3"], cfg["mode"], excludes, progress_cb=cb)
+    return backup.run_local_backup(ROOT, cfg.get("sources", []), cfg["destination"], cfg["mode"], excludes, progress_cb=cb)
+
+
+def _run_backup(trigger: str, acknowledge_mirror: bool = False) -> str:
+    """Start a backup if one isn't already running; return its job id.
+    Raises HTTPException(409) if a backup is in progress."""
+    cfg = _load_backup_config()
+    if not cfg["type"] or not (cfg["destination"] or cfg.get("s3")):
+        raise HTTPException(409, "No backup destination configured")
+    if cfg["mode"] == "sync" and not acknowledge_mirror:
+        raise HTTPException(
+            400, "Mirror mode can delete files at the destination — preview and "
+                 "confirm before running")
+    if not _backup_lock.acquire(blocking=False):
+        raise HTTPException(409, "Backup already in progress")
+
+    job_id = uuid.uuid4().hex
+    BACKUP_RUN.update(running=True, job_id=job_id, op=trigger, progress="", started=time.time())
+
+    def work():
+        try:
+            res = _run_backup_job(cfg)
+            latest = _load_backup_config()
+            latest.update(last_run=datetime.now().isoformat(), last_status="success",
+                          last_message=f"{res['files']} files, {res['bytes']} bytes",
+                          files_copied=res["files"], bytes_copied=res["bytes"])
+            _save_backup_config(latest)
+            _append_backup_log(f"{trigger} {cfg['mode']} OK — {res['files']} files, {res['bytes']} bytes")
+        except Exception as e:  # noqa: BLE001 - record any failure for the UI
+            latest = _load_backup_config()
+            latest.update(last_run=datetime.now().isoformat(), last_status="failed",
+                          last_message=str(e))
+            _save_backup_config(latest)
+            _append_backup_log(f"{trigger} {cfg['mode']} FAILED — {e}")
+        finally:
+            BACKUP_RUN.update(running=False, progress="")
+            _backup_lock.release()
+
+    threading.Thread(target=work, daemon=True).start()
+    return job_id
+
+
+class S3Body(BaseModel):
+    bucket: str = ""
+    prefix: str = ""
+    endpoint: str = ""
+    region: str = ""
+    access_key_id: str = ""
+    secret_access_key: str = ""
+
+
+class BackupConfigBody(BaseModel):
+    enabled: bool = False
+    type: Optional[str] = None
+    destination: str = ""
+    s3: Optional[S3Body] = None
+    sources: list = []
+    frequency_minutes: int = 15
+    mode: str = "copy"
+
+
+class BackupRunBody(BaseModel):
+    acknowledge_mirror: bool = False
+
+
+def _top_level_folders() -> list:
+    """Top-level folders under ROOT the user can pick as backup sources."""
+    out = []
+    try:
+        for child in sorted(ROOT.iterdir(), key=lambda p: p.name.lower()):
+            if child.is_dir() and not _is_state_path(child) and not child.name.startswith("."):
+                out.append(child.name)
+    except OSError:
+        pass
+    return out
+
+
+def _public_backup_config(cfg: dict) -> dict:
+    """Config for the UI — never leak the S3 secret back to the browser."""
+    out = dict(cfg)
+    out["source_path"] = str(ROOT)
+    out["available_folders"] = _top_level_folders()
+    if out.get("s3"):
+        s = dict(out["s3"])
+        s["secret_access_key"] = ""  # write-only
+        s["has_secret"] = bool(cfg["s3"].get("secret_access_key"))
+        out["s3"] = s
+    return out
+
+
+@app.get("/api/backup/config")
+def backup_get_config():
+    return _public_backup_config(_load_backup_config())
+
+
+@app.post("/api/backup/config")
+def backup_save_config(body: BackupConfigBody):
+    if body.mode not in ("copy", "sync"):
+        raise HTTPException(400, "mode must be 'copy' or 'sync'")
+    if body.frequency_minutes not in BACKUP_FREQUENCIES:
+        raise HTTPException(400, "frequency_minutes must be one of 5, 15, 60, 1440")
+
+    cfg = _load_backup_config()
+    dtype = None
+    destination = ""
+    s3 = None
+    if body.type == "local" and body.destination:
+        destination = backup.validate_local_destination(body.destination, ROOT, ROOT, STATE_DIR)
+        dtype = "local"
+    elif body.type == "s3" and body.s3 is not None:
+        raw = body.s3.model_dump()
+        # an empty secret field means "keep the stored one" (it's write-only in the UI)
+        if not raw.get("secret_access_key") and cfg.get("s3"):
+            raw["secret_access_key"] = cfg["s3"].get("secret_access_key", "")
+        s3 = backup.validate_s3_config(raw)
+        dtype = "s3"
+
+    if body.enabled and not dtype:
+        raise HTTPException(400, "Choose a destination before enabling backups")
+
+    # validate each selected source folder: must be a real directory under ROOT
+    sources = []
+    for s in body.sources:
+        p = safe_path(s)  # 403s on traversal or the state dir
+        if not p.is_dir():
+            raise HTTPException(400, f"Backup folder not found: {s}")
+        rel = to_rel(p)
+        if rel and rel not in sources:
+            sources.append(rel)
+
+    cfg.update(enabled=body.enabled, type=dtype, destination=destination, s3=s3,
+               sources=sources, frequency_minutes=body.frequency_minutes, mode=body.mode)
+    _save_backup_config(cfg)
+    return _public_backup_config(cfg)
+
+
+@app.post("/api/backup/test")
+def backup_test():
+    cfg = _load_backup_config()
+    if cfg["type"] == "local" and cfg["destination"]:
+        dest = Path(cfg["destination"])
+        try:
+            dest.mkdir(parents=True, exist_ok=True)
+            probe = dest / ".filepeek-backup-test"
+            probe.write_text("ok")
+            probe.unlink()
+        except OSError as e:
+            raise HTTPException(409, f"Destination is not writable: {e}")
+        return {"ok": True, "message": f"Destination {dest} is writable"}
+    if cfg["type"] == "s3" and cfg.get("s3"):
+        backup.s3_test(cfg["s3"])  # raises BackupError (400) if not writable
+        return {"ok": True, "message": f"S3 bucket {cfg['s3']['bucket']} is writable"}
+    raise HTTPException(400, "No backup destination configured")
+
+
+@app.post("/api/backup/preview")
+def backup_preview():
+    cfg = _load_backup_config()
+    excludes = _backup_excludes()
+    if cfg["type"] == "local" and cfg["destination"]:
+        return backup.preview_local(ROOT, cfg.get("sources", []), cfg["destination"], cfg["mode"], excludes)
+    if cfg["type"] == "s3" and cfg.get("s3"):
+        return backup.preview_s3(ROOT, cfg.get("sources", []), cfg["s3"], cfg["mode"], excludes)
+    raise HTTPException(400, "No backup destination configured")
+
+
+@app.post("/api/backup/run")
+def backup_run(body: BackupRunBody):
+    job_id = _run_backup("manual", acknowledge_mirror=body.acknowledge_mirror)
+    return {"started": True, "job_id": job_id}
+
+
+@app.get("/api/backup/status")
+def backup_status():
+    cfg = _load_backup_config()
+    return {
+        "running": BACKUP_RUN["running"],
+        "progress": BACKUP_RUN["progress"],
+        "last_run": cfg["last_run"],
+        "last_status": cfg["last_status"],
+        "last_message": cfg["last_message"],
+        "files_copied": cfg["files_copied"],
+        "bytes_copied": cfg["bytes_copied"],
+    }
+
+
+@app.get("/api/backup/logs")
+def backup_logs():
+    if not BACKUP_LOG_FILE.exists():
+        return {"logs": ""}
+    try:
+        return {"logs": BACKUP_LOG_FILE.read_text(errors="replace")[-BACKUP_LOG_MAX_BYTES:]}
+    except OSError:
+        return {"logs": ""}
+
+
+# Interval worker: started from main() so importing the app (e.g. in tests)
+# never spawns a real backup loop. Runs on the configured cadence while up.
+_backup_worker_stop = threading.Event()
+
+
+def _backup_worker_loop() -> None:
+    last_run = 0.0
+    cfg0 = _load_backup_config()
+    if cfg0.get("last_run"):
+        try:
+            last_run = datetime.fromisoformat(cfg0["last_run"]).timestamp()
+        except ValueError:
+            pass
+    while not _backup_worker_stop.wait(30):  # re-check every 30s
+        cfg = _load_backup_config()
+        if not cfg["enabled"] or not cfg["type"]:
+            continue
+        if BACKUP_RUN["running"]:
+            continue
+        if time.time() - last_run < cfg["frequency_minutes"] * 60:
+            continue
+        try:
+            # a scheduled mirror runs as configured (acknowledged when set up)
+            _run_backup("scheduled", acknowledge_mirror=(cfg["mode"] == "sync"))
+            last_run = time.time()
+        except HTTPException:
+            pass  # already running or config cleared — retry next tick
+
+
+def start_backup_worker() -> None:
+    threading.Thread(target=_backup_worker_loop, daemon=True).start()
 
 
 MD_PAGE_TEMPLATE = """<!doctype html>
@@ -1083,6 +1426,7 @@ def main() -> None:
             "and/or FILEPEEK_TOKEN, then try again."
         )
 
+    start_backup_worker()  # interval backups run only while the server is up
     import uvicorn
     uvicorn.run(app, host=args.host, port=args.port)
 

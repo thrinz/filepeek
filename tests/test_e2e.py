@@ -27,6 +27,9 @@ E2E_FILES = {
     "readme.md": "# Hello e2e\n",
     "docs & files/guide.md": "# Guide\n",
     "docs & files/sub dir/hello.md": "hello world\n",
+    "board.nts": '{"version":1,"statuses":[{"id":"s1","name":"To Do","color":"#3b82f6"}],'
+                 '"categories":[{"id":"c1","name":"Engineering","bugs":true}],'
+                 '"labels":[],"owners":[],"tasks":[],"bugSeq":1}\n',
 }
 
 
@@ -184,3 +187,67 @@ def test_filename_search_navigates_to_file(page):
     item.click()
     page.wait_for_selector('#file-info:has-text("hello.md")')
     assert url_path(page) == "docs & files/sub dir/hello.md"
+
+
+# --- backup ----------------------------------------------------------------------
+
+# --- tracks (.nts boards) --------------------------------------------------------
+
+def test_tracks_menu_lists_board(page):
+    page.click("#track-menu-btn")
+    page.wait_for_selector('#track-menu:has-text("board.nts")', timeout=5000)
+
+
+def test_opening_nts_renders_board(page):
+    row(page, "board.nts").click()
+    page.wait_for_selector("#board-view", state="visible", timeout=5000)
+    # the seeded "To Do" column should render in the board
+    page.wait_for_selector('#board-view:has-text("To Do")', timeout=5000)
+
+
+def test_tracks_add_task_persists(page, server):
+    import json
+    board = server["root"] / "board.nts"
+    row(page, "board.nts").click()
+    page.wait_for_selector('#board-view:has-text("To Do")', timeout=5000)
+    # open the task modal via the column's "+ Add task", create a task
+    page.click('#board-view >> text=+ Add task')
+    page.wait_for_selector("#tm-title")
+    page.fill("#tm-title", "first e2e task")
+    page.select_option("#tm-category", "c1")   # category, status, due date are required
+    page.fill("#tm-due", "2026-12-31")
+    page.click("#tm-save")
+    page.wait_for_selector('#board-view:has-text("first e2e task")', timeout=5000)
+    # the debounced autosave (250ms) should write it back to the .nts file
+    deadline = time.time() + 5
+    saved = False
+    while time.time() < deadline:
+        try:
+            tasks = json.loads(board.read_text()).get("tasks", [])
+            if any(t.get("title") == "first e2e task" for t in tasks):
+                saved = True
+                break
+        except (json.JSONDecodeError, OSError):
+            pass
+        page.wait_for_timeout(100)
+    assert saved, "task was not autosaved to the .nts file"
+
+
+# --- backup ----------------------------------------------------------------------
+
+def test_backup_local_flow_via_modal(page, server, tmp_path_factory):
+    # native local backup needs no external tools — runs anywhere
+    dest = tmp_path_factory.mktemp("e2e-backup")
+    page.click("#btn-backup")
+    page.wait_for_selector("#backup-main")
+
+    # configure a local destination, save, then back up now
+    page.check("#backup-type-local")
+    page.fill("#backup-local-path", str(dest))
+    page.click("#backup-save")
+    page.wait_for_selector('#toast:has-text("saved")')
+
+    page.click("#backup-now")
+    # the status box should report a successful run; the files should land
+    page.wait_for_selector('#backup-statusbox:has-text("success")', timeout=15000)
+    assert (dest / "readme.md").exists()

@@ -8,6 +8,10 @@ bookmarks.json
 permlinks.json
 nohup.out
 
+# filepeek runtime state (created when STATE_DIR is the app dir) — may hold the S3 secret
+backup_config.json
+backup.log
+
 # Secrets — never commit credentials or env files
 .env
 *.env

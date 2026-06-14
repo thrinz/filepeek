@@ -3,3 +3,4 @@ uvicorn[standard]
 pydantic
 python-multipart
 openpyxl
+boto3           # S3-compatible backup destinations (AWS, Backblaze B2, Wasabi, R2, MinIO)
