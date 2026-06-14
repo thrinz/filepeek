@@ -5,19 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <title>filepeek — View AI-Generated Files in Your Browser | Markdown, Excel, HTML Viewer</title>
-<meta name="description" content="filepeek is a free, self-hosted viewer for AI-generated files. Render Markdown with Mermaid diagrams, view xlsx/docx/pptx without Office, preview HTML — straight from your Linux or WSL2 filesystem.">
+<meta name="description" content="filepeek is a free, self-hosted viewer for AI-generated files. Render Markdown with Mermaid diagrams, view xlsx/docx/pptx without Office, preview HTML — plus task boards and automatic backup to local or S3 — straight from your Linux or WSL2 filesystem.">
 <link rel="canonical" href="https://filepeek.dev/">
 <link rel="icon" type="image/svg+xml" href="logo.svg">
 
 <!-- Open Graph / social previews -->
 <meta property="og:type" content="website">
 <meta property="og:title" content="filepeek — View AI-Generated Files in Your Browser">
-<meta property="og:description" content="Self-hosted viewer for the files AI agents produce: Markdown with Mermaid, Excel/Word/PowerPoint, HTML, code, CSV, images, PDFs. One Python file, no database.">
+<meta property="og:description" content="Self-hosted viewer for the files AI agents produce: Markdown with Mermaid, Excel/Word/PowerPoint, HTML, code, CSV, images, PDFs — plus task boards and automatic backup. One Python file, no database.">
 <meta property="og:url" content="https://filepeek.dev/">
 <meta property="og:image" content="https://filepeek.dev/img/markdown.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="filepeek — View AI-Generated Files in Your Browser">
-<meta name="twitter:description" content="Render Markdown, Mermaid, xlsx, docx, pptx, HTML and code from any folder — self-hosted, one Python file.">
+<meta name="twitter:description" content="Render Markdown, Mermaid, xlsx, docx, pptx, HTML and code from any folder — plus task boards and automatic backup. Self-hosted, one Python file.">
 <meta name="twitter:image" content="https://filepeek.dev/img/markdown.png">
 
 <script type="application/ld+json">
@@ -27,7 +27,7 @@
   "name": "filepeek",
   "operatingSystem": "Linux, macOS, Windows (WSL2)",
   "applicationCategory": "DeveloperApplication",
-  "description": "A single-file, self-hosted web viewer for AI-generated files: Markdown with Mermaid diagrams, HTML, Excel, Word, PowerPoint, CSV, code, images, and PDFs.",
+  "description": "A single-file, self-hosted web viewer for AI-generated files: Markdown with Mermaid diagrams, HTML, Excel, Word, PowerPoint, CSV, code, images, and PDFs. Includes task boards (.nts) and automatic backup to local or S3-compatible storage.",
   "url": "https://filepeek.dev/",
   "downloadUrl": "https://github.com/thrinz/filepeek",
   "softwareRequirements": "Python 3.10+",
@@ -59,6 +59,16 @@
       "@type": "Question",
       "name": "Is my data sent anywhere?",
       "acceptedAnswer": { "@type": "Answer", "text": "No. filepeek is fully self-hosted and reads files straight off your disk. Nothing is uploaded to any third-party service." }
+    },
+    {
+      "@type": "Question",
+      "name": "Can filepeek back up my files?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes — built in. Back up selected folders or everything to a local/NAS folder or any S3-compatible cloud (AWS, Backblaze B2, Wasabi, Cloudflare R2, MinIO) on a schedule or on demand. Cloud setup is four pasted values — no rclone, no OAuth. Copy mode never deletes; mirror mode is gated behind a preview and a typed confirmation." }
+    },
+    {
+      "@type": "Question",
+      "name": "What are Track boards (.nts files)?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Any .nts file opens as an interactive task board with kanban, table, and bugs views — owners, labels, priorities, checklists, and per-task bug tracking. The board is plain JSON saved back to the file, so it is versionable and portable with no database." }
     },
     {
       "@type": "Question",
@@ -140,6 +150,8 @@
     <div class="card"><h3>📊 Excel, Word, PowerPoint</h3><p>View xlsx, docx, and pptx in the browser — no Microsoft Office, no LibreOffice, no upload.</p></div>
     <div class="card"><h3>🌐 HTML pages</h3><p>Agent-built dashboards and mockups served directly, ready to click through.</p></div>
     <div class="card"><h3>💻 Code &amp; data</h3><p>~60 languages, CSV/TSV as sortable tables, images, SVG, and PDFs inline.</p></div>
+    <div class="card"><h3>🗂️ Track boards</h3><p>Open a <code>.nts</code> file as a kanban/table task board — bugs, owners, labels, priorities, checklists — saved back as plain JSON.</p></div>
+    <div class="card"><h3>☁️ Automatic backup</h3><p>Protect chosen folders to a local/NAS path or any S3-compatible cloud (Backblaze B2, Wasabi, R2, S3) on a schedule — no rclone, no OAuth.</p></div>
     <div class="card"><h3>🔍 Search &amp; organize</h3><p>Filename and full-text search, bookmarks, and a bookmarkable URL for every folder and file.</p></div>
     <div class="card"><h3>🔐 Self-hosted &amp; private</h3><p>Your files never leave your machine. Optional HTTPS + password mode for cloud servers and Tailscale.</p></div>
   </div>
@@ -172,6 +184,16 @@ FILEPEEK_ROOT=~/projects .venv/bin/python app.py</code></pre>
        Localhost forwarding is automatic.</p></details>
   <details><summary>Is my data sent anywhere?</summary>
     <p>No. filepeek is fully self-hosted and reads files straight off your disk.</p></details>
+  <details><summary>Can filepeek back up my files?</summary>
+    <p>Yes — built in. Back up selected folders (or everything) to a local/NAS folder or any
+       S3-compatible cloud (AWS, Backblaze B2, Wasabi, Cloudflare R2, MinIO) on a schedule or on
+       demand. Cloud setup is four pasted values — no rclone, no OAuth, no provider console app.
+       Copy mode never deletes; an advanced mirror mode is gated behind a preview and a typed
+       confirmation.</p></details>
+  <details><summary>What are Track boards (.nts files)?</summary>
+    <p>Any <code>.nts</code> file opens as an interactive task board — kanban, table, and bugs views
+       with owners, labels, priorities, checklists, and per-task bug tracking. The board is plain
+       JSON saved back to the file, so it's versionable and portable, with no database.</p></details>
   <details><summary>Is it free?</summary>
     <p>Yes — free and open source under the MIT license.</p></details>
 </main>
