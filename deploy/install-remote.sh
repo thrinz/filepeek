@@ -114,6 +114,7 @@ FILEPEEK_PORT=$PORT
 FILEPEEK_PASSWORD_HASH=$hash
 FILEPEEK_TOKEN=$TOKEN
 FILEPEEK_SECRET=$secret
+FILEPEEK_PASSWORD_MUST_CHANGE=1
 EOF
   chown root:filepeek "$ENV_FILE"
   chmod 640 "$ENV_FILE"
@@ -212,15 +213,14 @@ write_summary() {
   cat > "$CREDS_FILE" <<EOF
 filepeek — installed $(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-URL:        $URL
-Password:   $PASSWORD
-API token:  $TOKEN   (use as:  Authorization: Bearer <token>)
+URL:                $URL
+Temporary password: $PASSWORD   (you'll set your own on first login)
+API token:          $TOKEN   (use as:  Authorization: Bearer <token>)
 
 Files served from:  $DATA_DIR
 Config:             $ENV_FILE
-Change password:    /opt/filepeek/.venv/bin/python /opt/filepeek/app.py hash-password
-                    then update FILEPEEK_PASSWORD_HASH in $ENV_FILE and:
-                    systemctl restart filepeek
+Reset the password: remove $STATE_DIR/auth.json, then 'systemctl restart filepeek'
+                    to revert to the temporary password above (forces a change again).
 EOF
   chmod 600 "$CREDS_FILE"
 
@@ -228,10 +228,10 @@ EOF
   echo "============================================================"
   echo " filepeek is running."
   echo
-  echo "   URL:       $URL"
+  echo "   URL:                $URL"
   [ -n "$CERT_NOTE" ] && echo "   Note:      $CERT_NOTE"
-  echo "   Password:  $PASSWORD"
-  echo "   API token: $TOKEN"
+  echo "   Temporary password: $PASSWORD   (set your own on first login)"
+  echo "   API token:          $TOKEN"
   echo
   echo " Credentials also saved to $CREDS_FILE"
   echo " Files are served from $DATA_DIR — put your files there."

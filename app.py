@@ -68,18 +68,50 @@ UPLOAD_CHUNK = 1024 * 1024  # 1MB streaming chunks
 # --- Authentication (remote mode) ---------------------------------------
 # Auth turns on when FILEPEEK_PASSWORD_HASH and/or FILEPEEK_TOKEN is set.
 # Generate a hash with:  python app.py hash-password
-PASSWORD_HASH = os.environ.get("FILEPEEK_PASSWORD_HASH", "")
+#
+# A user-changed password is stored in STATE_DIR/auth.json (app-writable) and
+# overrides FILEPEEK_PASSWORD_HASH from the env file — so the env file can stay
+# root-owned/read-only for the service. FILEPEEK_PASSWORD_MUST_CHANGE=1 (set by
+# the installer when it auto-generates a password) forces a change on first login
+# until that override exists.
+AUTH_STATE_FILE = STATE_DIR / "auth.json"
+
+
+def _stored_password_hash() -> str:
+    try:
+        if AUTH_STATE_FILE.exists():
+            return json.loads(AUTH_STATE_FILE.read_text()).get("password_hash", "") or ""
+    except (OSError, ValueError):
+        pass
+    return ""
+
+
+_password_override = _stored_password_hash()
+PASSWORD_HASH = _password_override or os.environ.get("FILEPEEK_PASSWORD_HASH", "")
 API_TOKEN = os.environ.get("FILEPEEK_TOKEN", "")
 AUTH_ENABLED = bool(PASSWORD_HASH or API_TOKEN)
+# Force a change on first login (until the user has saved their own override).
+PASSWORD_MUST_CHANGE = (not _password_override) and os.environ.get(
+    "FILEPEEK_PASSWORD_MUST_CHANGE", "").strip().lower() not in ("", "0", "false", "no")
 # Unset secret means sessions are invalidated on restart, which is fine for local use
 SESSION_SECRET = os.environ.get("FILEPEEK_SECRET") or secrets.token_hex(32)
 SESSION_COOKIE = "filepeek_session"
 SESSION_TTL = 7 * 24 * 3600
 LOGIN_MAX_FAILURES = 10
 LOGIN_LOCKOUT_SECONDS = 15 * 60
+MIN_PASSWORD_LEN = 8
 AUTH_EXEMPT_PATHS = {"/login", "/static/logo.svg"}
 
 _login_failures: dict = {}  # ip -> (failure_count, locked_until_ts)
+
+
+def _save_password_hash(new_hash: str) -> None:
+    """Persist a user-chosen password hash to STATE_DIR (atomic, 0600)."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = AUTH_STATE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"password_hash": new_hash}))
+    os.chmod(tmp, 0o600)
+    tmp.replace(AUTH_STATE_FILE)
 
 
 def hash_password(password: str, iterations: int = 200_000) -> str:
@@ -129,17 +161,29 @@ def _client_ip(request: Request) -> str:
 app = FastAPI(title="filepeek")
 
 
+def _authorized(request) -> bool:
+    if _session_valid(request.cookies.get(SESSION_COOKIE)):
+        return True
+    if API_TOKEN:
+        header = request.headers.get("authorization", "")
+        if header.startswith("Bearer ") and hmac.compare_digest(header[7:], API_TOKEN):
+            return True
+    return False
+
+
 @app.middleware("http")
 async def require_auth(request, call_next):
-    if AUTH_ENABLED and request.url.path not in AUTH_EXEMPT_PATHS:
-        authorized = _session_valid(request.cookies.get(SESSION_COOKIE))
-        if not authorized and API_TOKEN:
-            header = request.headers.get("authorization", "")
-            authorized = header.startswith("Bearer ") and hmac.compare_digest(header[7:], API_TOKEN)
-        if not authorized:
+    path = request.url.path
+    if AUTH_ENABLED and path not in AUTH_EXEMPT_PATHS:
+        if not _authorized(request):
             if "text/html" in request.headers.get("accept", ""):
                 return RedirectResponse("/login", status_code=303)
             return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+        # Signed in on a temporary password → force a change before anything else.
+        if PASSWORD_MUST_CHANGE and path != "/change-password":
+            if "text/html" in request.headers.get("accept", ""):
+                return RedirectResponse("/change-password", status_code=303)
+            return JSONResponse({"detail": "Password change required"}, status_code=403)
     return await call_next(request)
 
 
@@ -451,6 +495,61 @@ def logout():
     resp = RedirectResponse("/login", status_code=303)
     resp.delete_cookie(SESSION_COOKIE)
     return resp
+
+
+CHANGE_PAGE = LOGIN_PAGE.replace(
+    "<title>filepeek — log in</title>", "<title>filepeek — set a new password</title>"
+).replace(
+    """  <form class="card" method="post" action="/login">
+    <img src="/static/logo.svg" alt="">
+    <h1>filepeek</h1>
+    <input type="password" name="password" placeholder="Password" autofocus autocomplete="current-password">
+    <p class="err">__ERROR__</p>
+    <button type="submit">Log in</button>
+  </form>""",
+    """  <form class="card" method="post" action="/change-password">
+    <img src="/static/logo.svg" alt="">
+    <h1>Set a new password</h1>
+    <p class="err" style="color:var(--fg);min-height:0;margin:0 0 1rem">You're signed in with a temporary password. Choose a new one to continue.</p>
+    <input type="password" name="password" placeholder="New password" autofocus autocomplete="new-password">
+    <input type="password" name="confirm" placeholder="Confirm new password" autocomplete="new-password" style="margin-top:.5rem">
+    <p class="err">__ERROR__</p>
+    <button type="submit">Save and continue</button>
+  </form>""",
+)
+
+
+@app.get("/change-password", response_class=HTMLResponse)
+def change_password_page(request: Request):
+    if not AUTH_ENABLED or not PASSWORD_MUST_CHANGE:
+        return RedirectResponse("/", status_code=303)
+    if not _authorized(request):
+        return RedirectResponse("/login", status_code=303)
+    return CHANGE_PAGE.replace("__ERROR__", "")
+
+
+@app.post("/change-password")
+def change_password(request: Request, password: str = Form(""), confirm: str = Form("")):
+    global PASSWORD_HASH, PASSWORD_MUST_CHANGE
+    if not AUTH_ENABLED or not PASSWORD_MUST_CHANGE:
+        return RedirectResponse("/", status_code=303)
+    if not _authorized(request):
+        return RedirectResponse("/login", status_code=303)
+    if len(password) < MIN_PASSWORD_LEN:
+        return HTMLResponse(
+            CHANGE_PAGE.replace("__ERROR__", f"Use at least {MIN_PASSWORD_LEN} characters."),
+            status_code=400)
+    if password != confirm:
+        return HTMLResponse(CHANGE_PAGE.replace("__ERROR__", "Passwords didn't match."), status_code=400)
+    if verify_password(password, PASSWORD_HASH):
+        return HTMLResponse(
+            CHANGE_PAGE.replace("__ERROR__", "Pick a password different from the temporary one."),
+            status_code=400)
+    new_hash = hash_password(password)
+    _save_password_hash(new_hash)  # STATE_DIR override; env file stays untouched
+    PASSWORD_HASH = new_hash
+    PASSWORD_MUST_CHANGE = False
+    return RedirectResponse("/", status_code=303)
 
 
 @app.get("/api/tree")
