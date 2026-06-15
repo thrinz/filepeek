@@ -1,0 +1,17 @@
+[Unit]
+Description=filepeek file viewer (local user service)
+After=default.target
+
+[Service]
+WorkingDirectory=@REPO@
+Environment=FILEPEEK_ROOT=@ROOT@
+Environment=FILEPEEK_PORT=@PORT@
+# Optional secrets (FILEPEEK_PASSWORD_HASH / FILEPEEK_TOKEN / FILEPEEK_SECRET).
+# The leading '-' makes the file optional, so this is a no-op until you create it.
+EnvironmentFile=-%h/.config/filepeek/filepeek.env
+ExecStart=@REPO@/.venv/bin/python @REPO@/app.py
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
