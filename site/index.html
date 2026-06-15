@@ -242,7 +242,8 @@
 ./install.sh
 FILEPEEK_ROOT=~/projects .venv/bin/python app.py</code></pre>
   <p>Open <code>http://localhost:8765</code>. On WSL2 that URL works directly in your Windows browser.
-     One Python file, one HTML file, no database.</p>
+     One Python file, one HTML file, no database. Need a different port? Set
+     <code>FILEPEEK_PORT=9000</code> (or pass <code>--port 9000</code>).</p>
 
   <h2>Frequently asked questions</h2>
   <details><summary>How do I view the Markdown files Claude Code or ChatGPT generates?</summary>
