@@ -32,6 +32,8 @@ STATIC_DIR = Path(__file__).parent / "static"
 STATE_DIR = Path(os.environ.get("FILEPEEK_STATE_DIR", str(Path(__file__).parent))).expanduser().resolve()
 PERMLINKS_FILE = STATE_DIR / "permlinks.json"
 BOOKMARKS_FILE = STATE_DIR / "bookmarks.json"
+RECENTS_FILE = STATE_DIR / "recents.json"
+RECENTS_LIMIT = 100  # most-recently-visited files kept
 
 # --- Backup configuration --------------------------------------------------
 BACKUP_CONFIG_FILE = STATE_DIR / "backup_config.json"
@@ -685,6 +687,10 @@ def delete_item(path: str):
     kept_marks = [m for m in marks if m["path"] != rel and not m["path"].startswith(prefix)]
     if len(kept_marks) != len(marks):
         _save_bookmarks(kept_marks)
+    recents = _load_recents()
+    kept_recents = [r for r in recents if r["path"] != rel and not r["path"].startswith(prefix)]
+    if len(kept_recents) != len(recents):
+        _save_recents(kept_recents)
     return {"ok": True}
 
 
@@ -1106,6 +1112,53 @@ def delete_bookmark(path: str):
     rel = to_rel(safe_path(path))
     marks = [m for m in _load_bookmarks() if m["path"] != rel]
     _save_bookmarks(marks)
+    return {"ok": True}
+
+
+def _load_recents() -> list:
+    if RECENTS_FILE.exists():
+        try:
+            return json.loads(RECENTS_FILE.read_text())
+        except (OSError, ValueError):
+            return []
+    return []
+
+
+def _save_recents(recents: list) -> None:
+    RECENTS_FILE.write_text(json.dumps(recents, indent=2))
+
+
+class RecentBody(BaseModel):
+    path: str
+
+
+@app.get("/api/recents")
+def list_recents():
+    return {"recents": _load_recents()}
+
+
+@app.post("/api/recents")
+def add_recent(body: RecentBody):
+    """Record a file visit: move it to the front, dedupe by path, cap at RECENTS_LIMIT."""
+    p = safe_path(body.path)
+    if not p.exists() or p.is_dir():
+        raise HTTPException(404, "Not found")
+    rel = to_rel(p)
+    recents = [r for r in _load_recents() if r["path"] != rel]
+    recents.insert(0, {"path": rel, "name": p.name, "visited": datetime.now().isoformat()})
+    del recents[RECENTS_LIMIT:]
+    _save_recents(recents)
+    return {"path": rel}
+
+
+@app.delete("/api/recents")
+def delete_recent(path: str = ""):
+    """Remove one recent entry, or clear the whole list when no path is given."""
+    if not path:
+        _save_recents([])
+        return {"ok": True}
+    rel = to_rel(safe_path(path))
+    _save_recents([r for r in _load_recents() if r["path"] != rel])
     return {"ok": True}
 
 

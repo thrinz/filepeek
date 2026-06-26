@@ -269,6 +269,42 @@ def test_bookmark_rejects_files(client):
     assert client.post("/api/bookmarks", json={"path": "readme.md"}).status_code == 404
 
 
+# --- recents ------------------------------------------------------------------------
+
+def test_recents_crud_and_dedupe(client):
+    assert client.post("/api/recents", json={"path": "readme.md"}).status_code == 200
+    assert client.post("/api/recents", json={"path": "notes.txt"}).status_code == 200
+    client.post("/api/recents", json={"path": "readme.md"})  # revisit -> moves to front, no dupe
+    recents = client.get("/api/recents").json()["recents"]
+    assert [r["path"] for r in recents] == ["readme.md", "notes.txt"]
+    assert "visited" in recents[0]
+    client.delete("/api/recents", params={"path": "readme.md"})
+    assert [r["path"] for r in client.get("/api/recents").json()["recents"]] == ["notes.txt"]
+    client.delete("/api/recents")  # no path -> clear all
+    assert client.get("/api/recents").json()["recents"] == []
+
+
+def test_recent_rejects_dirs_and_missing(client):
+    assert client.post("/api/recents", json={"path": "sub dir"}).status_code == 404
+    assert client.post("/api/recents", json={"path": "ghost.md"}).status_code == 404
+
+
+def test_recents_capped_at_limit(client, root, monkeypatch):
+    monkeypatch.setattr("app.RECENTS_LIMIT", 3)
+    for i in range(5):
+        (root / f"r{i}.txt").write_text("x")
+        assert client.post("/api/recents", json={"path": f"r{i}.txt"}).status_code == 200
+    recents = client.get("/api/recents").json()["recents"]
+    assert [r["path"] for r in recents] == ["r4.txt", "r3.txt", "r2.txt"]
+
+
+def test_delete_folder_drops_its_recents(client, root):
+    client.post("/api/recents", json={"path": "sub dir/nested.txt"})
+    client.post("/api/recents", json={"path": "readme.md"})
+    client.delete("/api/delete", params={"path": "sub dir"})
+    assert [r["path"] for r in client.get("/api/recents").json()["recents"]] == ["readme.md"]
+
+
 # --- / and /view ----------------------------------------------------------------------
 
 def test_index_serves_ui(client):

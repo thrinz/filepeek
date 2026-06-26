@@ -48,6 +48,28 @@ Open http://localhost:8765. On WSL2, that URL works directly in your **Windows**
 browser — localhost forwarding is automatic. No auth is required in local mode
 because the server only listens on 127.0.0.1.
 
+**Change the port** (default `8765`) — handy if it's taken or you run more than one
+instance — with the `FILEPEEK_PORT` env var or the `--port` flag:
+
+```bash
+FILEPEEK_ROOT=~/projects FILEPEEK_PORT=9000 .venv/bin/python app.py   # → :9000
+.venv/bin/python app.py --port 9000                                  # flag also works
+```
+
+**Run it in the background** (auto-start on boot, no terminal to keep open — nice
+on WSL2 so `localhost:8765` is always there from your Windows browser) with a
+systemd **user** service:
+
+```bash
+FILEPEEK_ROOT=~/projects ./install.sh --service
+# manage: systemctl --user {status,restart} filepeek · journalctl --user -u filepeek -f
+```
+
+It serves `127.0.0.1` only (same as foreground). `FILEPEEK_PORT` picks the port,
+and enabling **linger** lets it start before you log in. Requires systemd (on WSL2,
+`systemd=true` in `/etc/wsl.conf`). To add a login, put `FILEPEEK_PASSWORD_HASH=…`
+in `~/.config/filepeek/filepeek.env` and restart.
+
 ## Remote server (AWS, GCP, Azure, DigitalOcean, Linode, …)
 
 Two ways, both end with HTTPS + password auth + a systemd service:
@@ -73,6 +95,10 @@ curl -fsSL https://.../install-remote.sh | sudo FILEPEEK_DOMAIN=files.example.co
 
 Prefer no public exposure at all? `FILEPEEK_MODE=tailscale` serves it only on your
 [Tailscale](https://tailscale.com) network instead of installing Caddy.
+
+**From your phone:** with the Tailscale app connected, open the server's
+`https://<machine>.<tailnet>.ts.net` URL in your mobile browser — no public
+ports, no extra setup. Verified working in mobile Safari on iPhone.
 
 ## Tracks — task boards in a file
 
@@ -204,6 +230,22 @@ and adds editing, search, uploads, and access control.
 Yes — run it on a server with the one-line installer (HTTPS + password) or on
 your [Tailscale](https://tailscale.com) network, then send a permalink to any
 HTML or Markdown file.
+
+## Companion tool
+
+filepeek is the downstream companion to
+**[agentpeek](https://github.com/thrinz/agentpeek)**, where the content comes
+from — together they cover the loop of working with AI agents on a remote/WSL2
+box:
+
+- **agentpeek** — *run* the agents that generate the content: persistent
+  browser terminal sessions for driving Claude Code (or any shell) from
+  anywhere, left running when you disconnect.
+- **filepeek** — *view* what they produced: renders the Markdown, HTML, Office,
+  and code files those agents generate, in the browser.
+
+Both are self-hosted, single-operator tools that bind to `127.0.0.1` and go
+over Tailscale, and they share a design language.
 
 ## License
 

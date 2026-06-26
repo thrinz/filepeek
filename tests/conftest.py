@@ -39,6 +39,7 @@ def root(tmp_path, monkeypatch):
     monkeypatch.setattr(filepeek, "STATE_DIR", state)
     monkeypatch.setattr(filepeek, "PERMLINKS_FILE", state / "permlinks.json")
     monkeypatch.setattr(filepeek, "BOOKMARKS_FILE", state / "bookmarks.json")
+    monkeypatch.setattr(filepeek, "RECENTS_FILE", state / "recents.json")
     monkeypatch.setattr(filepeek, "BACKUP_CONFIG_FILE", state / "backup_config.json")
     monkeypatch.setattr(filepeek, "BACKUP_LOG_FILE", state / "backup.log")
     return root

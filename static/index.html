@@ -22,10 +22,26 @@ if (localStorage.getItem("filepeek-theme") === "dark" ||
 </script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<!-- CodeMirror 5: syntax-highlighted editing for dev file types (css/html/js/jsx/ts/tsx/sql/sh) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/theme/material-darker.min.css">
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/xml/xml.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/javascript/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/css/css.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/jsx/jsx.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/sql/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/shell/shell.min.js"></script>
 <style>
   [x-cloak] { display: none !important; }
   #editor { white-space: pre; tab-size: 2; }
   #editor.wrap { white-space: pre-wrap; word-break: break-word; }
+  #cm-host, #cm-host .CodeMirror { height: 100%; }
+  #cm-host .CodeMirror {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px; line-height: 1.5;
+  }
   .dropdown { display: none; }
   .dropdown.show { display: block; }
   .spinner {
@@ -157,6 +173,15 @@ if (localStorage.getItem("filepeek-theme") === "dark" ||
   </div>
   <div class="ml-auto flex items-center gap-4">
     <div class="relative">
+      <button id="recent-menu-btn" class="flex items-center gap-2 text-xs text-slate-400 dark:text-ink-dim hover:text-white">
+        <span>&#128340; Recent</span>
+        <span id="recent-count" class="bg-slate-700 text-slate-200 px-1.5 rounded">0</span>
+        <span class="text-[10px]">&#9662;</span>
+      </button>
+      <div id="recent-menu"
+           class="dropdown absolute right-0 top-full mt-1 bg-white dark:bg-ink-side text-slate-800 dark:text-ink-fg border border-slate-200 dark:border-ink-border rounded shadow-lg w-80 max-h-96 overflow-y-auto z-50"></div>
+    </div>
+    <div class="relative">
       <button id="track-menu-btn" class="flex items-center gap-2 text-xs text-slate-400 dark:text-ink-dim hover:text-white">
         <span>&#128203; Tracks</span>
         <span id="track-count" class="bg-slate-700 text-slate-200 px-1.5 rounded">0</span>
@@ -194,8 +219,8 @@ if (localStorage.getItem("filepeek-theme") === "dark" ||
     <div class="p-2 border-b border-slate-200 dark:border-ink-border flex flex-wrap items-center gap-2">
       <button id="btn-new-file" class="px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">+ File</button>
       <button id="btn-new-folder" class="px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">+ Folder</button>
-      <button id="btn-upload" title="Upload file (max 500MB)" class="px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">&#11014; Upload</button>
-      <input type="file" id="upload-input" class="hidden">
+      <button id="btn-upload" title="Upload files (max 500MB each)" class="px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">&#11014; Upload</button>
+      <input type="file" id="upload-input" class="hidden" multiple>
       <button id="btn-zip-folder" title="Download this folder as a zip (max 500MB)" class="px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">&#11015; Download Folder</button>
       <button id="btn-backup" title="Backup — protect your files locally or to cloud storage" class="px-3 py-1 border border-slate-300 dark:border-ink-border rounded hover:bg-slate-100 dark:hover:bg-ink-hover">&#9729; Backup</button>
       <button id="btn-search" title="Search filenames"
@@ -259,6 +284,7 @@ if (localStorage.getItem("filepeek-theme") === "dark" ||
     <div id="editor-wrap" class="hidden flex-1 flex min-h-0">
       <textarea id="editor" readonly spellcheck="false"
                 class="flex-1 p-3 font-mono text-[13px] outline-none resize-none read-only:bg-slate-50 dark:read-only:bg-ink-side overflow-auto"></textarea>
+      <div id="cm-host" class="hidden flex-1 min-h-0 overflow-hidden"></div>
       <div id="preview" class="hidden flex-1 p-4 overflow-auto prose max-w-none"></div>
       <div id="mermaid-view" class="hidden flex-1 overflow-auto p-4 flex items-start justify-center bg-slate-50 dark:bg-ink-bg"></div>
       <iframe id="preview-iframe" class="hidden flex-1 w-full h-full border-0" sandbox="allow-scripts allow-same-origin allow-popups allow-forms"></iframe>
@@ -731,6 +757,7 @@ async function openFile(path, rowEl) {
     state.sheetIdx = 0;
     syncUrl(data.path);
     renderFile();
+    recordRecent(path);
   } catch (e) {
     toast("Error: " + e.message);
     $("placeholder").classList.remove("hidden");
@@ -738,6 +765,65 @@ async function openFile(path, rowEl) {
     $("loader").classList.add("hidden");
     $("loader").classList.remove("flex");
   }
+}
+
+// --- CodeMirror code editor (dev file types) ----------------------------
+// Maps file extension -> CodeMirror mode. These types get syntax-highlighted
+// editing; everything else stays in the plain <textarea id="editor">.
+const CODE_MODES = {
+  ".css": "css",
+  ".html": "htmlmixed", ".htm": "htmlmixed",
+  ".js": "javascript", ".mjs": "javascript", ".cjs": "javascript", ".jsx": "jsx",
+  ".ts": { name: "javascript", typescript: true }, ".tsx": "jsx",
+  ".sql": "sql",
+  ".sh": "shell", ".bash": "shell", ".zsh": "shell",
+};
+let cm = null;  // single lazily-created CodeMirror instance, reused across files
+
+// Light vs dark syntax theme follows the app's dark mode (file-repo is always
+// light; filepeek toggles a `dark` class on <html>).
+function cmTheme() {
+  return document.documentElement.classList.contains("dark") ? "material-darker" : "default";
+}
+
+function ensureCM() {
+  if (cm) return cm;
+  cm = CodeMirror($("cm-host"), {
+    lineNumbers: true,
+    readOnly: "nocursor",
+    lineWrapping: state.wrap,
+    theme: cmTheme(),
+    tabSize: 2,
+    indentUnit: 2,
+  });
+  cm.on("change", () => { if (state.mode === "edit") state.dirty = true; });
+  return cm;
+}
+
+function codeUsesCM(f) {
+  return !!(f && f.is_text && window.CodeMirror && (f.ext in CODE_MODES));
+}
+
+// These key off the *current file* (not the visible panel): an html file's text
+// lives in CodeMirror even while its rendered preview is showing.
+function getCode() {
+  return (codeUsesCM(state.file) && cm) ? cm.getValue() : $("editor").value;
+}
+function setCode(v) {
+  if (codeUsesCM(state.file)) {
+    ensureCM();
+    cm.setValue(v);
+    cm.clearHistory();  // don't let undo bleed across files
+  } else {
+    $("editor").value = v;
+  }
+}
+function setCodeReadOnly(ro) {
+  $("editor").readOnly = ro;
+  if (cm) cm.setOption("readOnly", ro ? "nocursor" : false);
+}
+function focusCode() {
+  (codeUsesCM(state.file) && cm) ? cm.focus() : $("editor").focus();
 }
 
 function renderFile() {
@@ -760,12 +846,11 @@ function renderFile() {
     state.board = loadBoard(f.content || "");
     state.boardCode = false;
     _ntsDisplay = "board";
-    _ntsFilter = { status: "", owner: "" };
+    _ntsFilter = { status: "", owner: "", category: "", priority: "", label: "" };
     showPanel("board");
     return;
   }
 
-  const editor = $("editor");
   const isPdf = f.ext === ".pdf";
   const isImg = IMAGE_EXTS.includes(f.ext);
   const isVideo = VIDEO_EXTS.includes(f.ext);
@@ -794,12 +879,12 @@ function renderFile() {
   $("btn-toggle-preview").classList.toggle("hidden", !(textPreviewable && f.is_text));
   $("btn-edit").textContent = "Edit";
 
-  editor.value = f.is_text ? (f.content || "")
-    : (isImg || isPdf || isVideo || isAudio || f.office) ? "" : "(Binary file — use Download)";
-  editor.readOnly = true;
+  setCode(f.is_text ? (f.content || "")
+    : (isImg || isPdf || isVideo || isAudio || f.office) ? "" : "(Binary file — use Download)");
+  setCodeReadOnly(true);
 
   if (f.office_error) {
-    editor.value = `(Could not render this file: ${f.office_error})`;
+    setCode(`(Could not render this file: ${f.office_error})`);
     showPanel("code");
   } else if (isImg) {
     showPanel("img");
@@ -833,7 +918,8 @@ function showPanel(which) {
     pptx: "preview", mermaid: "mermaid-view", video: "video-view", audio: "audio-view",
     board: "board-view",
   };
-  for (const id of new Set(Object.values(ids))) $(id).classList.add("hidden");
+  const hideAll = new Set(Object.values(ids)); hideAll.add("cm-host");
+  for (const id of hideAll) $(id).classList.add("hidden");
   if (which !== "pdf") $("pdf-view").removeAttribute("src");
   if (which !== "img") $("img-view").innerHTML = "";  // release the image
   // Stop and release media when switching away so playback stops and the connection closes.
@@ -841,14 +927,14 @@ function showPanel(which) {
   if (which !== "audio") { const a = $("audio-view").querySelector("audio"); a.pause(); a.removeAttribute("src"); a.load(); }
 
   if (which === "md") {
-    $("preview").innerHTML = `<div class="markdown-body">${marked.parse($("editor").value || "")}</div>`;
+    $("preview").innerHTML = `<div class="markdown-body">${marked.parse(getCode() || "")}</div>`;
     renderMermaidFences($("preview"));
   } else if (which === "html") {
-    $("preview-iframe").srcdoc = $("editor").value || "";
+    $("preview-iframe").srcdoc = getCode() || "";
   } else if (which === "csv") {
-    $("csv-view").innerHTML = renderCsvTable($("editor").value || "", f.ext === ".tsv" ? "\t" : ",");
+    $("csv-view").innerHTML = renderCsvTable(getCode() || "", f.ext === ".tsv" ? "\t" : ",");
   } else if (which === "json") {
-    $("json-view").innerHTML = jsonHtml($("editor").value || "");
+    $("json-view").innerHTML = jsonHtml(getCode() || "");
   } else if (which === "pdf") {
     $("pdf-view").src = `/api/raw?path=${encodeURIComponent(f.path)}`;
   } else if (which === "img") {
@@ -859,7 +945,7 @@ function showPanel(which) {
   } else if (which === "audio") {
     $("audio-view").querySelector("audio").src = `/api/raw?path=${encodeURIComponent(f.path)}`;
   } else if (which === "mermaid") {
-    renderMermaid($("editor").value || "");
+    renderMermaid(getCode() || "");
   } else if (which === "sheet") {
     renderSheetView();
   } else if (which === "doc") {
@@ -873,26 +959,40 @@ function showPanel(which) {
   } else if (which === "board") {
     renderBoard();
   }
-  $(ids[which]).classList.remove("hidden");
+  if (which === "code") {
+    if (codeUsesCM(f)) {
+      const c = ensureCM();
+      c.setOption("mode", CODE_MODES[f.ext]);
+      c.setOption("theme", cmTheme());
+      c.setOption("lineWrapping", state.wrap);
+      c.setOption("readOnly", state.mode === "edit" ? false : "nocursor");
+      $("cm-host").classList.remove("hidden");
+      c.refresh();  // CM mis-measures if it was created/sized while hidden
+      if (state.mode === "edit") c.focus();
+    } else {
+      $("editor").classList.remove("hidden");
+    }
+  } else {
+    $(ids[which]).classList.remove("hidden");
+  }
 }
 
 function setEditMode(on) {
   state.mode = on ? "edit" : "view";
-  const editor = $("editor");
-  editor.readOnly = !on;
+  setCodeReadOnly(!on);
   $("btn-save").classList.toggle("hidden", !on);
   $("btn-edit").textContent = on ? "Cancel" : "Edit";
   if (on) {
-    // The textarea is hidden whenever a preview panel is showing, so editing
+    // The code editor is hidden whenever a preview panel is showing, so editing
     // would focus an invisible element. Force the code panel visible first.
     if (state.previewMode) {
       state.previewMode = false;
       $("btn-toggle-preview").textContent = "Preview";
     }
     showPanel("code");
-    editor.focus();
+    focusCode();
   } else {
-    editor.value = state.file.content || "";
+    setCode(state.file.content || "");  // revert any unsaved edits
     state.dirty = false;
   }
 }
@@ -914,7 +1014,7 @@ function togglePreview() {
 }
 
 async function saveFile() {
-  const content = $("editor").value;
+  const content = getCode();
   await api("/api/file", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -930,6 +1030,7 @@ async function saveFile() {
 function applyWrap() {
   const on = state.wrap;
   $("editor").classList.toggle("wrap", on);
+  if (cm) cm.setOption("lineWrapping", on);
   const b = $("btn-wrap");
   b.classList.toggle("bg-blue-600", on);
   b.classList.toggle("border-blue-600", on);
@@ -945,7 +1046,7 @@ function toggleWrap() {
 }
 
 async function copyToClipboard() {
-  try { await navigator.clipboard.writeText($("editor").value); toast("Copied to clipboard"); }
+  try { await navigator.clipboard.writeText(getCode()); toast("Copied to clipboard"); }
   catch { toast("Copy failed"); }
 }
 
@@ -1160,6 +1261,56 @@ async function toggleBookmarkFolder() {
   } catch (e) { toast("Error: " + e.message); }
 }
 
+// --- Recent files -------------------------------------------------------
+function recordRecent(path) {
+  api("/api/recents", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  }).then(loadRecents).catch(() => {});
+}
+
+async function loadRecents() {
+  try {
+    const data = await api("/api/recents");
+    const menu = $("recent-menu");
+    $("recent-count").textContent = data.recents.length;
+    menu.innerHTML = "";
+    if (!data.recents.length) {
+      menu.innerHTML = '<div class="px-3 py-2 text-slate-400 dark:text-ink-dim text-xs">No recent files yet</div>';
+      return;
+    }
+    const clear = document.createElement("div");
+    clear.className = "px-3 py-1.5 border-b border-slate-100 dark:border-ink-border text-right";
+    clear.innerHTML = '<button class="text-xs text-slate-400 dark:text-ink-dim hover:text-red-600">Clear all</button>';
+    clear.querySelector("button").onclick = async () => {
+      try { await api("/api/recents", { method: "DELETE" }); loadRecents(); }
+      catch (err) { toast("Error: " + err.message); }
+    };
+    menu.appendChild(clear);
+    for (const r of data.recents) {
+      const item = document.createElement("div");
+      item.className = "px-3 py-2 hover:bg-blue-50 dark:hover:bg-ink-hover border-b border-slate-100 dark:border-ink-border last:border-0 flex items-center gap-2";
+      item.innerHTML = `
+        <span class="link flex-1 min-w-0 cursor-pointer">
+          <span class="block font-medium truncate">&#128196; ${escapeHtml(r.name)}</span>
+          <span class="block text-xs text-slate-500 dark:text-ink-dim font-mono truncate">${escapeHtml(r.path)} · ${fmtDate(r.visited)}</span>
+        </span>
+        <button class="del text-slate-400 hover:text-red-600 text-lg leading-none" title="Remove">&times;</button>`;
+      item.querySelector(".link").onclick = async () => {
+        $("recent-menu").classList.remove("show");
+        await navigateToFile(r.path);
+      };
+      item.querySelector(".del").onclick = async (e) => {
+        e.stopPropagation();
+        try { await api(`/api/recents?path=${encodeURIComponent(r.path)}`, { method: "DELETE" }); loadRecents(); }
+        catch (err) { toast("Error: " + err.message); }
+      };
+      menu.appendChild(item);
+    }
+  } catch {}
+}
+
 async function newItem(isDir) {
   const name = prompt(isDir ? "New folder name:" : "New file name:");
   if (!name) return;
@@ -1197,6 +1348,7 @@ async function deleteEntry(path, name, isDir) {
     loadPermlinks();
     loadBookmarks();
     loadTracks();
+    loadRecents();
     toast(`Deleted ${name}`);
   } catch (e) { toast("Error: " + e.message); }
 }
@@ -1577,28 +1729,114 @@ $("btn-new-folder").onclick = () => newItem(true);
 
 const MAX_UPLOAD = 500 * 1024 * 1024;
 $("btn-upload").onclick = () => $("upload-input").click();
-$("upload-input").onchange = async (e) => {
-  const file = e.target.files[0];
-  e.target.value = "";
-  if (!file) return;
-  if (file.size > MAX_UPLOAD) { toast(`File too large: max 500MB`); return; }
+
+async function uploadOne(file) {
+  if (file.size > MAX_UPLOAD) throw new Error(`too large (max 500MB)`);
   const fd = new FormData();
   fd.append("file", file);
   fd.append("target_dir", state.path);
-  try {
-    const res = await fetch("/api/upload", { method: "POST", body: fd });
-    if (!res.ok) {
-      const t = await res.text();
-      if (res.status === 409 && confirm(`"${file.name}" exists — overwrite?`)) {
-        fd.append("overwrite", "true");
-        const res2 = await fetch("/api/upload", { method: "POST", body: fd });
-        if (!res2.ok) throw new Error(await res2.text());
-      } else { throw new Error(t || res.statusText); }
-    }
-    await loadTree(state.path);
-    toast(`Uploaded ${file.name}`);
-  } catch (err) { toast("Upload failed: " + err.message); }
+  const res = await fetch("/api/upload", { method: "POST", body: fd });
+  if (res.ok) return;
+  const t = await res.text();
+  if (res.status === 409) {
+    if (!confirm(`"${file.name}" exists — overwrite?`)) throw new Error("skipped");
+    fd.append("overwrite", "true");
+    const res2 = await fetch("/api/upload", { method: "POST", body: fd });
+    if (!res2.ok) throw new Error(await res2.text());
+    return;
+  }
+  throw new Error(t || res.statusText);
+}
+
+$("upload-input").onchange = async (e) => {
+  const files = [...e.target.files];
+  e.target.value = "";
+  if (!files.length) return;
+  let ok = 0;
+  const fails = [];
+  for (const file of files) {
+    try { await uploadOne(file); ok++; }
+    catch (err) { fails.push(`${file.name}: ${err.message}`); }
+  }
+  await loadTree(state.path);
+  if (ok) toast(`Uploaded ${ok} file${ok === 1 ? "" : "s"}`);
+  if (fails.length) toast(`Failed: ${fails.join("; ")}`);
 };
+
+// --- Paste an image from the clipboard → name it → save into the current folder ---
+const PASTE_EXT = { "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif",
+  "image/webp": ".webp", "image/bmp": ".bmp", "image/svg+xml": ".svg", "image/x-icon": ".ico" };
+document.addEventListener("paste", e => {
+  // Only take over the paste when the clipboard actually carries an image file.
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  let blob = null;
+  for (const it of items) {
+    if (it.kind === "file" && it.type.startsWith("image/")) { blob = it.getAsFile(); break; }
+  }
+  if (!blob) return;
+  e.preventDefault();
+  openImageSaveModal(blob);
+});
+
+function openImageSaveModal(blob) {
+  const ext = PASTE_EXT[blob.type] || "." + ((blob.type.split("/")[1] || "png").replace(/[^a-z0-9]/gi, "") || "png");
+  const url = URL.createObjectURL(blob);
+  const dirLabel = state.path ? "projects/" + state.path : "projects";
+  const overlay = ntsOverlay();
+  const close = () => { URL.revokeObjectURL(url); overlay.remove(); };
+  overlay.innerHTML = `<div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 p-5">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-semibold text-base">Save pasted image</h2>
+        <button class="pi-x text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+      </div>
+      <img src="${url}" alt="preview" class="max-h-48 w-auto mx-auto mb-3 rounded border border-slate-200">
+      <label class="block text-xs font-medium text-slate-500 mb-1">File name</label>
+      <input id="pi-name" class="w-full px-2 py-1.5 border border-slate-300 rounded font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" value="${escapeHtml('pasted-image' + ext)}">
+      <p class="text-[11px] text-slate-400 mt-1">Saving into <span class="font-mono">${escapeHtml(dirLabel)}</span> &middot; ${(blob.size / 1024).toFixed(1)} KB</p>
+      <div class="flex justify-end gap-2 mt-4">
+        <button class="pi-cancel px-3 py-1.5 text-sm border border-slate-300 rounded hover:bg-slate-100">Cancel</button>
+        <button class="pi-save px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded">Save</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener("mousedown", e => { if (e.target === overlay) close(); });
+  const input = overlay.querySelector("#pi-name");
+  overlay.querySelector(".pi-x").onclick = close;
+  overlay.querySelector(".pi-cancel").onclick = close;
+  const doSave = async () => {
+    const name = input.value.trim();
+    if (!name) { toast("Enter a file name"); input.focus(); return; }
+    if (name.includes("/") || name.includes("\\") || name === "." || name === "..") { toast("Invalid file name"); input.focus(); return; }
+    if (await savePastedImage(blob, name)) close();
+  };
+  overlay.querySelector(".pi-save").onclick = doSave;
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); doSave(); }
+    else if (e.key === "Escape") { e.preventDefault(); close(); }
+  });
+  input.focus();
+  const dot = input.value.lastIndexOf(".");
+  input.setSelectionRange(0, dot > 0 ? dot : input.value.length);
+}
+
+async function savePastedImage(blob, name) {
+  const fd = new FormData();
+  fd.append("file", blob, name);
+  fd.append("target_dir", state.path);
+  try {
+    let res = await fetch("/api/upload", { method: "POST", body: fd });
+    if (res.status === 409) {
+      if (!confirm(`"${name}" already exists — overwrite?`)) return false;
+      fd.append("overwrite", "true");
+      res = await fetch("/api/upload", { method: "POST", body: fd });
+    }
+    if (!res.ok) throw new Error((await res.text()) || res.statusText);
+    await loadTree(state.path);
+    toast(`Saved ${name}`);
+    return true;
+  } catch (err) { toast("Save failed: " + err.message); return false; }
+}
+
 $("btn-zip-folder").onclick = downloadFolderZip;
 $("zip-close").onclick = cancelZip;
 $("zip-cancel").onclick = cancelZip;
@@ -1673,6 +1911,17 @@ document.addEventListener("click", e => {
     $("bookmark-menu").classList.remove("show");
 });
 
+$("recent-menu-btn").onclick = e => {
+  e.stopPropagation();
+  const m = $("recent-menu");
+  m.classList.toggle("show");
+  if (m.classList.contains("show")) loadRecents();   // always show a fresh list
+};
+document.addEventListener("click", e => {
+  if (!$("recent-menu-btn").contains(e.target) && !$("recent-menu").contains(e.target))
+    $("recent-menu").classList.remove("show");
+});
+
 $("track-menu-btn").onclick = e => {
   e.stopPropagation();
   const m = $("track-menu");
@@ -1694,6 +1943,7 @@ window.addEventListener("beforeunload", e => { if (state.dirty) { e.preventDefau
 $("theme-toggle").onclick = () => {
   const dark = document.documentElement.classList.toggle("dark");
   localStorage.setItem("filepeek-theme", dark ? "dark" : "light");
+  if (cm) cm.setOption("theme", cmTheme());  // keep the code editor's theme in sync
 };
 
 // Draggable panel splitter — drag left/right to resize the two panels.
@@ -1746,6 +1996,7 @@ openFromUrl(new URLSearchParams(location.search).get("path") || "").catch(() => 
 loadPermlinks();
 loadBookmarks();
 loadTracks();
+loadRecents();
 
 // --- Tracks (.nts board files) ------------------------------------------
 async function loadTracks() {
@@ -1954,7 +2205,7 @@ function taskChecklist(t) { return Array.isArray(t.checklist) ? t.checklist : []
 
 let _ntsSeq = 0;
 let _ntsDisplay = "board";                       // "board" | "table" | "bugs" (transient)
-let _ntsFilter = { status: "", owner: "" };
+let _ntsFilter = { status: "", owner: "", category: "", priority: "", label: "" };
 let _bugFilter = { status: "", taskStatus: "" };
 let _boardSaveTimer = null;
 
@@ -2231,6 +2482,7 @@ function boardToolbarHtml() {
       ${state.board.boardView === 'status' ? `<button id="nts-add-status" class="px-3 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100">+ Status</button>` : ``}
       ${state.board.boardView === 'category' ? `<button id="nts-add-category" class="px-3 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100">+ Category</button>` : ``}` : ``;
   return `<div class="p-2 border-b border-slate-200 bg-white flex flex-wrap items-center gap-2">
+      ${!state.boardCode ? `<button id="nts-create-task" class="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 font-medium">+ Create Task</button>` : ``}
       <div class="inline-flex rounded border border-slate-300 overflow-hidden">
         <button id="nts-disp-board" class="px-3 py-1 text-xs ${seg(_ntsDisplay === 'board' && !state.boardCode)}">Board</button>
         <button id="nts-disp-table" class="px-3 py-1 text-xs border-l border-slate-300 ${seg(_ntsDisplay === 'table' && !state.boardCode)}">Table</button>
@@ -2248,6 +2500,7 @@ function boardToolbarHtml() {
 
 function wireBoardToolbar() {
   const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+  on("nts-create-task", () => openTaskModal());
   on("nts-disp-board", () => { state.boardCode = false; _ntsDisplay = "board"; renderBoard(); });
   on("nts-disp-table", () => { state.boardCode = false; _ntsDisplay = "table"; renderBoard(); });
   on("nts-disp-bugs", () => { state.boardCode = false; _ntsDisplay = "bugs"; renderBoard(); });
@@ -2323,14 +2576,20 @@ function renderColumn(col, idx, total, mode) {
   list.className = "flex-1 overflow-y-auto p-2 space-y-2 min-h-[3rem]";
   tasks.forEach(t => list.appendChild(renderCard(t)));
   el.appendChild(list);
-  // A task needs a status, so the inline "+ Add task" is only offered in status grouping.
+  // Every grouping can add tasks inline: the new task is pre-filled so it lands in
+  // this column (label/category/owner), defaulting the still-required status/category.
+  const add = document.createElement("button");
+  add.className = "mx-2 mb-2 px-2 py-1 text-xs text-slate-500 hover:bg-white rounded text-left";
+  add.textContent = "+ Add task";
   if (mode === "status") {
-    const add = document.createElement("button");
-    add.className = "mx-2 mb-2 px-2 py-1 text-xs text-slate-500 hover:bg-white rounded text-left";
-    add.textContent = "+ Add task";
     add.onclick = () => openTaskModal(null, col.key);
-    el.appendChild(add);
+  } else {
+    const pf = mode === "label" ? { labelId: col.key }
+      : mode === "category" ? { categoryId: col.key }
+      : { owner: col.key };
+    add.onclick = () => openTaskModal(null, null, pf);
   }
+  el.appendChild(add);
   setupColumnDrop(el, col, mode);
   return el;
 }
@@ -2391,16 +2650,25 @@ function renderBoardTable(body) {
   const f = _ntsFilter;
   const statusOpts = `<option value="">All statuses</option>` + state.board.statuses.map(s => `<option value="${s.id}"${f.status === s.id ? ' selected' : ''}>${escapeHtml(s.name)}</option>`).join("");
   const ownerOpts = `<option value="">All owners</option>` + owners.map(o => `<option value="${escapeHtml(o)}"${f.owner === o ? ' selected' : ''}>${escapeHtml(o)}</option>`).join("");
+  const catOpts = `<option value="">All categories</option>` + state.board.categories.map(cat => `<option value="${cat.id}"${f.category === cat.id ? ' selected' : ''}>${escapeHtml(cat.name)}</option>`).join("");
+  const priOpts = `<option value="">All priorities</option>` + NTS_PRIORITIES.map(p => `<option value="${escapeHtml(p)}"${f.priority === p ? ' selected' : ''}>${escapeHtml(p)}</option>`).join("");
+  const labelOpts = `<option value="">All labels</option>` + state.board.labels.map(lb => `<option value="${lb.id}"${f.label === lb.id ? ' selected' : ''}>${escapeHtml(lb.name)}</option>`).join("");
   const rows = all
-    .filter(t => (!f.status || t.statusId === f.status) && (!f.owner || t.owner === f.owner))
+    .filter(t => (!f.status || t.statusId === f.status) && (!f.owner || t.owner === f.owner)
+      && (!f.category || t.categoryId === f.category) && (!f.priority || t.priority === f.priority)
+      && (!f.label || (t.labelId || "") === f.label))
     .sort(byPriority);
   const c = "border border-slate-200 px-2 py-1 align-top";
   const cols = ["Title", "Status", "Category", "Owner", "Priority", "Pri #", "Label", "Start", "Due", "Modified"];
   body.innerHTML = `<div class="p-3">
       <div class="flex flex-wrap gap-2 mb-3 items-center">
         <select id="nts-f-status" class="px-2 py-1 text-xs border border-slate-300 rounded bg-white">${statusOpts}</select>
+        <select id="nts-f-category" class="px-2 py-1 text-xs border border-slate-300 rounded bg-white">${catOpts}</select>
         <select id="nts-f-owner" class="px-2 py-1 text-xs border border-slate-300 rounded bg-white">${ownerOpts}</select>
+        <select id="nts-f-priority" class="px-2 py-1 text-xs border border-slate-300 rounded bg-white">${priOpts}</select>
+        <select id="nts-f-label" class="px-2 py-1 text-xs border border-slate-300 rounded bg-white">${labelOpts}</select>
         <span class="text-xs text-slate-400">${rows.length} of ${all.length} tasks</span>
+        ${(f.status || f.owner || f.category || f.priority || f.label) ? `<button id="nts-f-clear" class="px-2 py-1 text-xs text-blue-600 hover:underline">Clear filters</button>` : ``}
       </div>
       <table class="w-full text-xs border-collapse bg-white">
         <thead><tr class="bg-slate-100">${cols.map(h => `<th class="${c} text-left font-semibold">${h}</th>`).join("")}</tr></thead>
@@ -2423,6 +2691,10 @@ function renderBoardTable(body) {
     </div>`;
   $("nts-f-status").onchange = e => { _ntsFilter.status = e.target.value; renderBoard(); };
   $("nts-f-owner").onchange = e => { _ntsFilter.owner = e.target.value; renderBoard(); };
+  $("nts-f-category").onchange = e => { _ntsFilter.category = e.target.value; renderBoard(); };
+  $("nts-f-priority").onchange = e => { _ntsFilter.priority = e.target.value; renderBoard(); };
+  $("nts-f-label").onchange = e => { _ntsFilter.label = e.target.value; renderBoard(); };
+  if ($("nts-f-clear")) $("nts-f-clear").onclick = () => { _ntsFilter = { status: "", owner: "", category: "", priority: "", label: "" }; renderBoard(); };
   body.querySelectorAll(".nts-row").forEach(r => r.onclick = () => openTaskModal(r.dataset.taskId));
 }
 
