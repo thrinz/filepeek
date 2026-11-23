@@ -1,3 +1,5 @@
+import { Directory, File, Paths, UploadType } from 'expo-file-system';
+
 import { loadConnection, saveConnection, type AuthMode, type Connection } from './storage';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,7 +86,13 @@ async function request<T>(base: string, token: string, path: string, init: Reque
         ...(init.headers as Record<string, string> | undefined),
       },
     });
-  } catch {
+  } catch (e) {
+    // "Network request failed" is the real can't-connect case; anything else is
+    // a bug building the request and should say so rather than blame the network.
+    const why = e instanceof Error ? e.message : String(e);
+    if (!/network request failed|timed? ?out|could not connect|offline|internet/i.test(why)) {
+      throw new NetworkError(`Request to ${base} failed: ${why}`);
+    }
     throw new NetworkError(`Can't reach ${base}. Is the server up and on your tailnet?`);
   }
   if (res.status === 204) return undefined as T;
@@ -269,18 +277,58 @@ export const addBookmark = (c: Connection, path: string) =>
 export const deleteBookmark = (c: Connection, path: string) =>
   authed<{ ok: boolean }>(c, `/api/bookmarks?path=${enc(path)}`, { method: 'DELETE' });
 
-/** Upload one picked file into `targetDir`. Rejects with status 409 if it exists and !overwrite. */
-export function uploadFile(c: Connection, targetDir: string, file: PickedFile, overwrite = false) {
-  const form = new FormData();
-  // React Native's FormData streams a local file when given {uri, name, type}.
-  form.append('file', {
-    uri: file.uri,
-    name: file.name,
-    type: file.mimeType || 'application/octet-stream',
-  } as unknown as Blob);
-  form.append('target_dir', targetDir);
-  form.append('overwrite', overwrite ? 'true' : 'false');
-  return authed<Entry>(c, '/api/upload', { method: 'POST', body: form });
+/**
+ * Upload one picked file into `targetDir`. Rejects with status 409 if it exists and !overwrite.
+ *
+ * Goes through expo-file-system's native uploader, which streams the file from
+ * disk. (Expo's `fetch` rejects React Native's `{uri, name, type}` form parts,
+ * so the usual FormData upload never leaves the phone.)
+ */
+export async function uploadFile(c: Connection, targetDir: string, file: PickedFile, overwrite = false) {
+  // The uploader names the upload after the file on disk, and pickers hand out
+  // files named by UUID — so stage a copy under the real name first.
+  const stage = new Directory(Paths.cache, `upload-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  stage.create();
+  try {
+    const staged = new File(stage, file.name.replace(/[/\\]/g, '_'));
+    new File(file.uri).copy(staged);
+    const send = () =>
+      staged
+        .upload(`${c.base}/api/upload`, {
+          httpMethod: 'POST',
+          uploadType: UploadType.MULTIPART,
+          fieldName: 'file',
+          mimeType: file.mimeType || 'application/octet-stream',
+          parameters: { target_dir: targetDir, overwrite: overwrite ? 'true' : 'false' },
+          headers: { Accept: 'application/json', ...authHeaders(c) },
+          sessionType: 'foreground',
+        })
+        .catch((e: unknown) => {
+          throw new NetworkError(`Upload failed: ${e instanceof Error ? e.message : String(e)}`);
+        });
+
+    let res = await send();
+    if (res.status === 401) {
+      await relogin(c); // token expired: sign in again, then retry once
+      res = await send();
+    }
+    let body: any = null;
+    try {
+      body = JSON.parse(res.body);
+    } catch {
+      // non-JSON body (e.g. a proxy error page)
+    }
+    if (res.status >= 200 && res.status < 300) return body as Entry;
+    const detail = typeof body?.detail === 'string' ? body.detail : '';
+    if (res.status === 401) throw new AuthError(detail || 'Session expired.');
+    throw new ApiError(detail || `Upload failed (HTTP ${res.status}).`, res.status);
+  } finally {
+    try {
+      stage.delete();
+    } catch {
+      // best effort; the OS clears the cache directory anyway
+    }
+  }
 }
 
 export type ResumeResult =
